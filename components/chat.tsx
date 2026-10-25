@@ -83,14 +83,13 @@ import { useSettingsSaved } from "@/components/settings-signal";
 
 /** One width for everything: transcript, cards, and the bottom blob share this column. */
 /**
- * Width tokens (wave-5 reskin, owner decision): the teaching PROSE spans the
- * full session width with a thin px-6 margin; the composer/question DOCK is
- * deliberately narrower (~46rem centered) per the reference. Same ELEMENT,
- * same place — width polish only.
+ * Width tokens (wave-5 reskin, owner decision): the teaching PROSE is
+ * slightly narrower than the composer/question DOCK (~48rem vs 52rem
+ * centered). Same ELEMENT, same place — width polish only.
  */
-const COLUMN = "mx-auto w-full max-w-none px-6";
-const DOCK = "mx-auto w-full max-w-[46rem] px-4";
-// The DOCK container's fixed width (46rem) and the plan marginalia's
+const COLUMN = "mx-auto w-full max-w-[48rem] px-6";
+const DOCK = "mx-auto w-full max-w-[52rem] px-4";
+// The DOCK container's fixed width (52rem) and the plan marginalia's
 // geometry (owner, plan-placement round): the bare diagram sits in the
 // dock band's RIGHT flank — MARGIN_GAP from the DOCK container's edge and
 // the same from the column's right edge. The box width is pure CSS, so
@@ -98,7 +97,7 @@ const DOCK = "mx-auto w-full max-w-[46rem] px-4";
 // the fade floor (owner, resize round) — below it the marginalia fades
 // out over the normal transition instead of popping away, and it stays
 // mounted while the question owns the band so widening fades it back.
-const DOCK_W = 46 * 16;
+const DOCK_W = 52 * 16;
 const MARGIN_GAP = 16;
 const MARGIN_MIN_W = 220;
 // The dock overlay's gradient band (h-24) — part of the reserved tail.
