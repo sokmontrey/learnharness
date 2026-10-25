@@ -41,14 +41,21 @@ const path = require("node:path");
 // renderer owns the number; this is the IPC widen target).
 const SIDEBAR_AUTOCLOSE = 928;
 
-const PRODUCT_NAME = "LearnHarness";
-
 // APP NAME → userData (owner, 2026-10-10): the Application Support dir is
 // exactly "LearnHarness" in dev AND packaged. Packaged Electron would
 // otherwise derive it from package.json "name" (now lowercase
 // "learnharness"), and productName metadata alone doesn't reach app.name.
 // Must run before the LH_DEV_URL suffix below — dev becomes
 // "LearnHarness-dev".
+//
+// Identity seam (2026-10-25): packaged builds take their name from what
+// electron-builder wrote into the app's package.json (productName) — so an
+// experiment build (`make desktop-experiment-linux`) ships its own product
+// name → its own userData dir → zero overlap with the installed app, its
+// data, or its single-instance lock. Unpackaged dev keeps the historical
+// "LearnHarness" (repo package.json has no productName, so app.getName()
+// would be the lowercase npm name); LH_APP_NAME overrides for ad-hoc runs.
+const PRODUCT_NAME = app.isPackaged ? app.getName() : (process.env.LH_APP_NAME || "LearnHarness");
 app.setName(PRODUCT_NAME);
 const AUTH_FILE = () => path.join(app.getPath("userData"), "auth.json");
 const DATA_DIR = () => path.join(app.getPath("userData"), "data");
@@ -477,6 +484,14 @@ function installUpdateNow() {
 function setupAutoUpdater() {
 	if (!app.isPackaged) {
 		log("auto-update: dev build — updater disabled");
+		return;
+	}
+	// Non-production builds must never touch the release feed: it points at
+	// the real LearnHarness GitHub Releases, so an update would replace this
+	// build with the production app. Only the exact production product name
+	// (electron-builder.yml) is allowed to update.
+	if (app.getName() !== "LearnHarness") {
+		log(`auto-update: disabled (non-production app name "${app.getName()}")`);
 		return;
 	}
 	try {

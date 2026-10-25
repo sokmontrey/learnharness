@@ -100,6 +100,10 @@ const DG_URL =
 	"&endpointing=300";
 
 export function deepgramUrl(language: DictationLanguage): string {
+	// Nova-3 multilingual hinting (Deepgram docs): language_hint biases
+	// detection toward en/fr — it does NOT restrict to them, any supported
+	// language heard still transcribes. Only applies when language=multi.
+	if (language === "multi") return `${DG_URL}&language=multi&language_hint=en&language_hint=fr`;
 	return `${DG_URL}&language=${language}`;
 }
 
