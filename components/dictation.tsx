@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2Icon, MicIcon } from "lucide-react";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
-import { useSettingsSaved } from "@/components/settings-signal";
+import { notifySettingsSaved, useSettingsSaved } from "@/components/settings-signal";
 import { FACTORY_SETTINGS, resolveSettings, type DictationLanguage, type UserSettings } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
 
@@ -112,13 +112,99 @@ export function deepgramUrl(language: DictationLanguage): string {
  *  and on every general-section save; a failed read keeps the last value. */
 let dictationLanguage: DictationLanguage = FACTORY_SETTINGS.general.dictationLanguage;
 
-function refreshDictationLanguage(): void {
-	fetch("/api/settings")
+function readDictationLanguage(): Promise<DictationLanguage> {
+	return fetch("/api/settings")
 		.then((r) => r.json() as Promise<{ settings?: UserSettings | null }>)
-		.then((body) => {
-			dictationLanguage = resolveSettings(body.settings ?? null).general.dictationLanguage;
-		})
-		.catch(() => {});
+		.then((body) => resolveSettings(body.settings ?? null).general.dictationLanguage)
+		.catch(() => dictationLanguage);
+}
+
+function refreshDictationLanguage(): void {
+	void readDictationLanguage().then((lang) => {
+		dictationLanguage = lang;
+	});
+}
+
+/** The inline language switcher's options (owner, 2026-10-25): English,
+ *  French, and Multilingual only — the full catalog stays in Settings →
+ *  General. Exported for pins. */
+export const DICTATION_QUICK_LANGUAGES = [
+	{ id: "en", short: "EN", label: "English" },
+	{ id: "fr", short: "FR", label: "Français" },
+	{ id: "multi", short: "Multi", label: "Multilingual (auto-detect)" },
+] as const satisfies readonly { id: DictationLanguage; short: string; label: string }[];
+
+/**
+ * The dictate control's right-hand language switcher (owner, 2026-10-25):
+ * EN / FR / Multi — the three mixed-use languages. Writes through the
+ * same general-section PUT the Settings picker uses, so the running
+ * dictation hook picks it up via the settings-saved signal and the next
+ * take uses it. Disabled while recording (a mid-take flip would apply
+ * nowhere — the socket's language is fixed at open).
+ */
+export function DictationLanguageSwitcher({ disabled }: { disabled?: boolean }) {
+	const [language, setLanguage] = useState<DictationLanguage>(() => dictationLanguage);
+	useEffect(() => {
+		let live = true;
+		void readDictationLanguage().then((lang) => {
+			if (live) setLanguage(lang);
+		});
+		return () => {
+			live = false;
+		};
+	}, []);
+	useSettingsSaved((section) => {
+		if (section !== "general") return;
+		void readDictationLanguage().then(setLanguage);
+	});
+
+	const pick = (next: DictationLanguage) => {
+		if (disabled || next === language) return;
+		const previous = language;
+		setLanguage(next);
+		fetch("/api/settings")
+			.then((r) => r.json() as Promise<{ settings?: UserSettings | null }>)
+			.then((body) => {
+				const general = resolveSettings(body.settings ?? null).general;
+				return fetch("/api/settings/general", {
+					method: "PUT",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ ...general, dictationLanguage: next }),
+				});
+			})
+			.then((res) => {
+				if (res.ok) notifySettingsSaved("general");
+				else throw new Error(`general PUT ${res.status}`);
+			})
+			.catch(() => setLanguage(previous));
+	};
+
+	return (
+		<div
+			className="flex shrink-0 items-center gap-0.5 rounded-md border border-border/50 bg-card/50 p-0.5"
+			role="group"
+			aria-label="Dictation language"
+			data-testid="dictation-language"
+		>
+			{DICTATION_QUICK_LANGUAGES.map((option) => (
+				<button
+					key={option.id}
+					type="button"
+					disabled={disabled}
+					aria-pressed={language === option.id}
+					title={disabled ? `${option.label} (applies to the next take)` : option.label}
+					onClick={() => pick(option.id)}
+					className={`rounded px-1.5 py-0.5 font-ui text-[10px] uppercase transition-colors disabled:cursor-default disabled:opacity-60 ${
+						language === option.id
+							? "bg-accent text-foreground"
+							: "text-muted-foreground/60 hover:text-muted-foreground"
+					}`}
+				>
+					{option.short}
+				</button>
+			))}
+		</div>
+	);
 }
 
 /** Meter tuning — the owner's tested values, see the file header. */
@@ -702,35 +788,38 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 
 	if (!active) {
 		return (
-			<Hint
-				// Errored: the button span truncates the line — the tooltip is its
-				// full reveal (the keyless line KEEPS "Deepgram" — owner overrule:
-				// it's the Keys row label, the truth the user needs). Otherwise the
-				// quiet label + the live ⌘D binding.
-				label={error ?? "Dictate"}
-				action={error ? undefined : "toggle-dictation"}
-				side="top"
-			>
-				<button
-					type="button"
-					onClick={() => {
-						if (keyless) {
-							clearError();
-							openSettings("keys", DEEPGRAM_KEY_ID);
-						} else {
-							toggle();
-						}
-					}}
-					aria-label={error ? `Dictation failed: ${error}` : "Start dictation"}
-					data-testid="dictation-toggle"
-				// Same blurring as the floating chrome (owner, fix wave round 3),
-			// but lower opacity — the mic stays quieter than the model pills.
-			className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-border/50 bg-card/50 text-xs text-muted-foreground/70 shadow-lg backdrop-blur transition-colors hover:border-border hover:text-muted-foreground"
-			>
-					<MicIcon className="size-3.5" />
-					<span className="max-w-full truncate">{error ?? "Dictate"}</span>
-				</button>
-			</Hint>
+			<div className="flex w-full items-center gap-1.5">
+				<Hint
+					// Errored: the button span truncates the line — the tooltip is its
+					// full reveal (the keyless line KEEPS "Deepgram" — owner overrule:
+					// it's the Keys row label, the truth the user needs). Otherwise the
+					// quiet label + the live ⌘D binding.
+					label={error ?? "Dictate"}
+					action={error ? undefined : "toggle-dictation"}
+					side="top"
+				>
+					<button
+						type="button"
+						onClick={() => {
+							if (keyless) {
+								clearError();
+								openSettings("keys", DEEPGRAM_KEY_ID);
+							} else {
+								toggle();
+							}
+						}}
+						aria-label={error ? `Dictation failed: ${error}` : "Start dictation"}
+						data-testid="dictation-toggle"
+					// Same blurring as the floating chrome (owner, fix wave round 3),
+				// but lower opacity — the mic stays quieter than the model pills.
+				className="flex h-7 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-border/50 bg-card/50 text-xs text-muted-foreground/70 shadow-lg backdrop-blur transition-colors hover:border-border hover:text-muted-foreground"
+				>
+						<MicIcon className="size-3.5" />
+						<span className="max-w-full truncate">{error ?? "Dictate"}</span>
+					</button>
+				</Hint>
+				<DictationLanguageSwitcher />
+			</div>
 		);
 	}
 
@@ -771,6 +860,7 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 					/>
 				))}
 			</div>
+			<DictationLanguageSwitcher disabled />
 		</div>
 	);
 }

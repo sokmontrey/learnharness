@@ -459,8 +459,8 @@ export function KeysSection({
 				<SubscriptionConnections />
 			</SettingsGroup>
 
-			{(["Dictation", "Read-aloud", "Search"] as const).map((label) => <SettingsGroup key={label} label={label} testid={label === "Dictation" ? "group-dictation" : label === "Read-aloud" ? "group-read-aloud" : "group-search"}>
-				{toolRows.filter((status) => label === "Dictation" ? status.id === "DEEPGRAM_API_KEY" : label === "Read-aloud" ? status.id === "ELEVENLABS_API_KEY" : status.id !== "DEEPGRAM_API_KEY" && status.id !== "ELEVENLABS_API_KEY").map((status) => (
+			{(["Dictation", "Read-aloud", "Pronunciation", "Search"] as const).map((label) => <SettingsGroup key={label} label={label} testid={label === "Dictation" ? "group-dictation" : label === "Read-aloud" ? "group-read-aloud" : label === "Pronunciation" ? "group-pronunciation" : "group-search"}>
+				{toolRows.filter((status) => label === "Dictation" ? status.id === "DEEPGRAM_API_KEY" : label === "Read-aloud" ? status.id === "ELEVENLABS_API_KEY" : label === "Pronunciation" ? status.id === "TONEPERFECT_API_KEY" : status.id !== "DEEPGRAM_API_KEY" && status.id !== "ELEVENLABS_API_KEY" && status.id !== "TONEPERFECT_API_KEY").map((status) => (
 					<KeyTableRow
 						key={status.id}
 						label={status.info?.label ?? status.id}

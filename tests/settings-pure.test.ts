@@ -254,6 +254,7 @@ describe("classifyKeys — the Keys section's tool-group projection", () => {
 			"TAVILY_API_KEY",
 			"BRAVE_API_KEY",
 			"ELEVENLABS_API_KEY",
+			"TONEPERFECT_API_KEY",
 		]);
 		assert.ok(out.toolRows[0]!.present);
 		assert.ok(!out.toolRows[1]!.present);

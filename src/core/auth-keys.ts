@@ -54,6 +54,12 @@ export const AUTH_KEYS: readonly AuthKeyInfo[] = [
 		description: "Read-aloud voice for transcript selections — Flash v2.5, billed per character.",
 		docsUrl: "https://elevenlabs.io/app/settings/api-keys",
 	},
+	{
+		id: "TONEPERFECT_API_KEY",
+		label: "TonePerfect",
+		description: "Pronunciation scoring for practice attempts — 50 free credits, then from $10/mo.",
+		docsUrl: "https://api.toneperfect.app/docs",
+	},
 ] as const;
 
 const AUTH_KEY_IDS: ReadonlySet<string> = new Set(AUTH_KEYS.map((k) => k.id));
@@ -171,6 +177,9 @@ export function validateKeyShape(id: string, rawValue: string): KeyShapeResult {
 			// No public format — the length floor only catches truncated pastes.
 			return nonEmpty(20);
 		case "ELEVENLABS_API_KEY":
+			// No documented public format — length floor + paste hygiene only.
+			return nonEmpty(20);
+		case "TONEPERFECT_API_KEY":
 			// No documented public format — length floor + paste hygiene only.
 			return nonEmpty(20);
 		default:

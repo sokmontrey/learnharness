@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createWarmMinter, deepgramUrl } from "../components/dictation.tsx";
+import { createWarmMinter, deepgramUrl, DICTATION_QUICK_LANGUAGES } from "../components/dictation.tsx";
 
 describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 	it("caches: concurrent and repeat mints share ONE promise and mint once", async () => {
@@ -108,5 +108,12 @@ describe("deepgramUrl (dictation language setting)", () => {
 		assert.equal(url.searchParams.get("model"), "nova-3");
 		assert.equal(url.searchParams.get("language"), "es");
 		assert.equal(new URL(deepgramUrl("multi")).searchParams.get("language"), "multi");
+	});
+
+	it("the inline switcher offers exactly en/fr/multi (owner, 2026-10-25)", () => {
+		assert.deepEqual(
+			DICTATION_QUICK_LANGUAGES.map((option) => option.id),
+			["en", "fr", "multi"],
+		);
 	});
 });

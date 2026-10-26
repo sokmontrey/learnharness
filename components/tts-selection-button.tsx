@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Volume2Icon } from "lucide-react";
+import { MicIcon, Volume2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
+import { PronouncePanel } from "@/components/pronounce-panel";
 import {
 	TTS_LANGUAGES,
 	TTS_MAX_CHARS,
@@ -47,6 +48,7 @@ export function TtsSelectionButton({
 	const [speakingLang, setSpeakingLang] = useState<TtsLanguage | null>(null);
 	const [status, setStatus] = useState<TtsStatus>("ok");
 	const [failDetail, setFailDetail] = useState<string | null>(null);
+	const [practice, setPractice] = useState<{ text: string; x: number; y: number } | null>(null);
 	const lastText = useRef("");
 
 	const fail = (detail?: string) => {
@@ -96,8 +98,11 @@ export function TtsSelectionButton({
 		};
 
 		// Scroll (captured — the transcript scroller isn't `document`) would
-		// strand a fixed-position popup, so hide it; the selection survives.
-		const onScroll = () => setAnchor(null);
+		// strand fixed-position surfaces, so hide them; the selection survives.
+		const onScroll = () => {
+			setAnchor(null);
+			setPractice(null);
+		};
 
 		document.addEventListener("selectionchange", updateFromSelection);
 		document.addEventListener("keydown", onKeyDown);
@@ -142,7 +147,7 @@ export function TtsSelectionButton({
 		setSpeakingLang(language);
 	};
 
-	if (!anchor) return null;
+	if (!anchor && !practice) return null;
 
 	const labelFor = (language: TtsLanguage) => {
 		if (status === "key-needed") return "ElevenLabs key needed — open Settings";
@@ -155,33 +160,63 @@ export function TtsSelectionButton({
 	};
 
 	return (
-		<div
-			className="fixed z-50"
-			style={{
-				left: anchor.x,
-				top: anchor.y,
-				transform: "translate(-50%, -100%) translateY(-8px)",
-			}}
-		>
-			<div className="flex gap-1" role="group" aria-label="Read selection aloud">
-				{TTS_LANGUAGES.map((language) => (
-					<Button
-						key={language}
-						type="button"
-						size="xs"
-						variant="secondary"
-						data-testid={`tts-selection-button-${language}`}
-						aria-label={labelFor(language)}
-						title={labelFor(language)}
-						onMouseDown={(e) => e.preventDefault()}
-						onClick={() => readAloud(language)}
-						className="cursor-pointer border border-border font-ui uppercase shadow-lg hover:bg-secondary"
-					>
-						<Volume2Icon className="size-3" />
-						{language}
-					</Button>
-				))}
-			</div>
-		</div>
+		<>
+			{anchor && (
+				<div
+					className="fixed z-50"
+					style={{
+						left: anchor.x,
+						top: anchor.y,
+						transform: "translate(-50%, -100%) translateY(-8px)",
+					}}
+				>
+					<div className="flex gap-1" role="group" aria-label="Read selection aloud">
+						{TTS_LANGUAGES.map((language) => (
+							<Button
+								key={language}
+								type="button"
+								size="xs"
+								variant="secondary"
+								data-testid={`tts-selection-button-${language}`}
+								aria-label={labelFor(language)}
+								title={labelFor(language)}
+								onMouseDown={(e) => e.preventDefault()}
+								onClick={() => readAloud(language)}
+								className="cursor-pointer border border-border font-ui uppercase shadow-lg hover:bg-secondary"
+							>
+								<Volume2Icon className="size-3" />
+								{language}
+							</Button>
+						))}
+						<Button
+							type="button"
+							size="xs"
+							variant="secondary"
+							data-testid="tts-selection-button-practice"
+							aria-label="Practice pronunciation"
+							title="Practice pronunciation"
+							onMouseDown={(e) => e.preventDefault()}
+							onClick={() => {
+								const text = lastText.current.trim();
+								if (text) setPractice({ text, x: anchor.x, y: anchor.y });
+							}}
+							className="cursor-pointer border border-border font-ui uppercase shadow-lg hover:bg-secondary"
+						>
+							<MicIcon className="size-3" />
+							Practice
+						</Button>
+					</div>
+				</div>
+			)}
+			{/* Sibling, not a child, of the transformed popup above — a fixed
+			    element inside a transformed ancestor would mis-position. */}
+			{practice && (
+				<PronouncePanel
+					text={practice.text}
+					anchor={{ x: practice.x, y: practice.y }}
+					onClose={() => setPractice(null)}
+				/>
+			)}
+		</>
 	);
 }
