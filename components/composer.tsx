@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRightIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
+import { DictationTextarea } from "@/components/dictation-text";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
 
@@ -90,7 +91,7 @@ export function Composer({
 				act();
 			}}
 		>
-			<textarea
+			<DictationTextarea
 				ref={inputRef}
 				value={value}
 				onChange={(e) => onChange(e.target.value)}

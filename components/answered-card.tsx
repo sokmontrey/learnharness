@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ConfidenceRail } from "@/components/confidence-rail";
 import { GlyphMark } from "@/components/ui/glyph-mark";
+import { DictationText } from "@/components/dictation-text";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { cn } from "@/lib/utils";
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -152,13 +153,19 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 							data-testid="answered-other"
 							className="flex items-center gap-2 rounded-lg border border-primary bg-accent px-3 py-1.5"
 						>
-							<span>“{answer.other}”</span>
+							<span>
+								“<DictationText text={answer.other} />”
+							</span>
 						</div>
 					)}
 				</div>
 			)}
 
-			{answer.text && <div className="lh-prose mt-2 whitespace-pre-wrap">“{answer.text}”</div>}
+			{answer.text && (
+				<div className="lh-prose mt-2 whitespace-pre-wrap">
+					“<DictationText text={answer.text} />”
+				</div>
+			)}
 
 			{/* The confidence record (owner round 6): the slider's rail, disc
 			    removed — the missing handle itself says "this is a record, not a

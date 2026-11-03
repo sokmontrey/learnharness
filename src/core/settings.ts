@@ -69,6 +69,11 @@ export interface RoleModelOverride {
 export const MODEL_SLOTS = ["strong", "cheap", "vision"] as const;
 export type ModelSlotName = (typeof MODEL_SLOTS)[number];
 
+/** Optional dictation-repair model. Stored with the slots, absent from the
+ *  first-run gate (`slotsConfigured` still requires only the three tiers). */
+export const DICTATION_MODEL_SLOT = "fast" as const;
+export const STORED_MODEL_SLOTS = [...MODEL_SLOTS, DICTATION_MODEL_SLOT] as const;
+
 /** The DEFAULT thinking level for UNSET levels only (owner, 2026-09-22):
  *  a slot/override/chat that names a model but no thinking level resolves
  *  to the FIRST entry in this order that the model supports
@@ -203,6 +208,8 @@ export interface ModelsSettings {
 	strong?: ModelSlot;
 	cheap?: ModelSlot;
 	vision?: ModelSlot;
+	/** Repairs a finished dictation. Unset: the transcript is inserted raw. */
+	fast?: ModelSlot;
 }
 
 /** First-run gate (model-slots wave, owner 2026-09-20): the app refuses
@@ -508,7 +515,7 @@ function sanitizeRoleOverride(raw: unknown): RoleModelOverride | undefined {
  *  stale client can't park junk in a slot. */
 function sanitizeModels(raw: Record<string, unknown>): ModelsSettings {
 	const out: ModelsSettings = {};
-	for (const slot of MODEL_SLOTS) {
+	for (const slot of STORED_MODEL_SLOTS) {
 		const cleaned = sanitizeRoleOverride(raw[slot]);
 		if (cleaned) out[slot] = cleaned;
 	}

@@ -9,6 +9,7 @@ import { SetupDialog } from "@/components/setup-dialog";
 import { ComposerActions, NodePickerControl } from "@/components/composer-actions";
 import { useStrongKeyless, useZeroKeys, ZeroKeysPill } from "@/components/setup-cta";
 import { DictationBar, joinDictation, useDictation } from "@/components/dictation";
+import { DictationTextarea } from "@/components/dictation-text";
 import { useFieldCycle } from "@/components/field-cycle";
 import { SidebarToggle } from "@/components/sidebar";
 import { StatsBar } from "@/components/stats-bar";
@@ -248,7 +249,7 @@ export function Home({
 						void start();
 					}}
 				>
-					<textarea
+					<DictationTextarea
 						ref={topicInputRef}
 						value={topic}
 						onChange={(e) => {

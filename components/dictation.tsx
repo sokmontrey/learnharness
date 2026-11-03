@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { learnerAsk } from "@/lib/dictation-markup";
 import { Loader2Icon, MicIcon } from "lucide-react";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
 import { notifySettingsSaved, useSettingsSaved } from "@/components/settings-signal";
@@ -32,7 +33,9 @@ import { Hint } from "@/components/ui/hint";
  *   - interim_results=false, endpointing=300: his live-tuned params — no
  *     partial hypotheses, finals commit ~300ms after a pause (owner
  *     round 1: live words are distracting and shift the meter; the
- *     meter's width is FIXED while recording).
+ *     meter's width is FIXED while recording). Multilingual
+ *     code-switching uses endpointing=100, Deepgram's recommendation
+ *     for language=multi.
  *
  * Owner round 2 (2026-09-17, second live test):
  *   - DEFERRED transcript: finals accumulate in a buffer during the run
@@ -88,6 +91,9 @@ import { Hint } from "@/components/ui/hint";
  * endpointing=300, no interims. Silence streams too (the worklet never
  * pauses), so the socket never idles — no KeepAlive needed. The language
  * comes from settings (general.dictationLanguage, default "en").
+ * language=multi follows Deepgram's Nova-3 code-switching setup:
+ * endpointing=100 plus language_hint for en and fr (hints bias detection;
+ * they do not restrict it).
  */
 const DG_URL =
 	"wss://api.deepgram.com/v1/listen" +
@@ -96,15 +102,13 @@ const DG_URL =
 	"&sample_rate=16000" +
 	"&channels=1" +
 	"&smart_format=true" +
-	"&punctuate=true" +
-	"&endpointing=300";
+	"&punctuate=true";
 
 export function deepgramUrl(language: DictationLanguage): string {
-	// Nova-3 multilingual hinting (Deepgram docs): language_hint biases
-	// detection toward en/fr — it does NOT restrict to them, any supported
-	// language heard still transcribes. Only applies when language=multi.
-	if (language === "multi") return `${DG_URL}&language=multi&language_hint=en&language_hint=fr`;
-	return `${DG_URL}&language=${language}`;
+	if (language === "multi") {
+		return `${DG_URL}&endpointing=100&language=multi&language_hint=en&language_hint=fr`;
+	}
+	return `${DG_URL}&endpointing=300&language=${language}`;
 }
 
 /** The resolved dictation language — module-level like the warm token, so
@@ -346,6 +350,88 @@ export function joinDictation(current: string, final: string): string {
  * unmount guard is identity-based so dev-mode double-invoked effects
  * can't clear another claimant.
  */
+/** The learner-visible ask for the repair pass. Empty when nothing is pending. */
+let dictationAsk = "";
+
+export function useDictationAsk(input: unknown) {
+	const ask = learnerAsk(input);
+	useEffect(() => {
+		dictationAsk = ask;
+		return () => {
+			if (dictationAsk === ask) dictationAsk = "";
+		};
+	}, [ask]);
+}
+
+/** The learner-visible conversation context for the repair pass. Empty when
+ *  nothing is available. Serialized from the last few messages. */
+let dictationContext = "";
+
+function messageText(message: unknown): string {
+	if (!message || typeof message !== "object") return "";
+	const raw = message as { role?: unknown; content?: unknown; parts?: unknown };
+	const role = typeof raw.role === "string" ? raw.role : "message";
+	const source = Array.isArray(raw.parts) ? raw.parts : raw.content;
+	let text = "";
+	if (typeof source === "string") text = source;
+	else if (Array.isArray(source)) {
+		text = source
+			.map((part) => {
+				if (typeof part === "string") return part;
+				if (part && typeof part === "object") {
+					const p = part as { type?: unknown; text?: unknown };
+					if (p.type === "text" && typeof p.text === "string") return p.text;
+					if (typeof p.text === "string") return p.text;
+				}
+				return "";
+			})
+			.join(" ");
+	}
+	text = text.replace(/\\s+/g, " ").trim();
+	if (!text) return "";
+	return `${role}: ${text}`;
+}
+
+function serializeDictationContext(messages: unknown): string {
+	if (!Array.isArray(messages)) return "";
+	return messages
+		.filter((message) => message && typeof message === "object" && (message as { role?: unknown }).role === "user")
+		.slice(-3)
+		.map(messageText)
+		.filter(Boolean)
+		.join("\\n");
+}
+
+export function useDictationContext(messages: unknown) {
+	const context = useMemo(() => serializeDictationContext(messages), [messages]);
+	useEffect(() => {
+		dictationContext = context;
+		return () => {
+			if (dictationContext === context) dictationContext = "";
+		};
+	}, [context]);
+}
+
+const REPAIR_TIMEOUT_MS = 12_000;
+
+/** The repair route. Any failure — unset model, timeout, bad JSON — returns
+ *  the transcript so the field still receives the words. */
+async function repairTranscript(text: string, signal: AbortSignal): Promise<string> {
+	try {
+		const res = await fetch("/api/dictation/post", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ text, ask: dictationAsk, context: dictationContext }),
+			signal,
+		});
+		if (!res.ok) return text;
+		const body = (await res.json()) as { text?: unknown };
+		return typeof body.text === "string" && body.text.trim() ? body.text : text;
+	} catch {
+		return text;
+	}
+}
+
 export function useDictationTarget(append: (text: string) => void, claimed: boolean) {
 	useEffect(() => {
 		if (!claimed) return;
@@ -424,24 +510,39 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 	 *  run and flush into the primary input once, at teardown. */
 	const bufferRef = useRef<string[]>([]);
 	/** Resolvers waiting for the run to fully end (finish(), owner
-	 *  2026-10-01): released by cleanup() — every terminal path runs it. */
+	 *  2026-10-01): released when the repair has landed — every terminal
+	 *  path runs cleanup(), and cleanup waits out the repair. */
 	const waitersRef = useRef<Array<() => void>>([]);
+	/** True once the latest cleanup has finished its repair. finish()
+	 *  reads this so a stale "stopping" render cannot park a waiter. */
+	const settledRef = useRef(true);
+	const repairAbortRef = useRef<AbortController | null>(null);
+	const repairTailRef = useRef(Promise.resolve());
 
 	/** Flush the buffered transcript into the primary input — question claim
-	 *  first, composer fallback. Called exactly once per run, at cleanup; the
-	 *  buffer clears itself so double-cleanup is a no-op. */
-	const flush = useCallback(() => {
-		if (bufferRef.current.length === 0) return;
+	 *  first, composer fallback. The repair runs after the mic is dead.
+	 *  A newer cleanup (cancel) aborts it and the stale result is dropped. */
+	const flush = useCallback((gen: number): Promise<void> => {
+		if (bufferRef.current.length === 0) return Promise.resolve();
 		const text = bufferRef.current.join(" ");
 		bufferRef.current = [];
-		(questionTarget ?? appendRef.current)(text);
+		const ac = new AbortController();
+		repairAbortRef.current = ac;
+		const timer = setTimeout(() => ac.abort(), REPAIR_TIMEOUT_MS);
+		return repairTranscript(text, ac.signal)
+			.then((out) => {
+				if (gen !== genRef.current) return;
+				(questionTarget ?? appendRef.current)(out);
+			})
+			.finally(() => clearTimeout(timer));
 	}, []);
 
 	/** Full teardown of one run's machinery. Idempotent; generation-guarded by callers. */
 	const cleanup = useCallback(() => {
 		genRef.current++;
-		dictationActiveFlag = false;
-		flush(); // the deferred transcript appears when the run ends (owner round 2)
+		const gen = genRef.current;
+		settledRef.current = false;
+		repairAbortRef.current?.abort();
 		if (safetyRef.current) {
 			clearTimeout(safetyRef.current);
 			safetyRef.current = null;
@@ -461,15 +562,19 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 				ws.close();
 			} catch {}
 		}
-		setPhase("idle");
-		// The finish() waiters ride until NOW — post-flush, post-teardown:
-		// a submit path resuming after `await finishDictation()` reads the
-		// target field with the dictated tail already in it.
-		for (const w of waitersRef.current.splice(0)) w();
-		// Pre-mint for the next run (mitigation D) — best-effort; a keyless
-		// page just doesn't warm.
-		warmTokens.refresh();
-	}, []);
+		// The repair lands, then the run is idle. finish() waiters ride until
+		// then so a submit reads the field with the dictated tail in it.
+		// A newer cleanup supersedes this one (cancel drops the repair).
+		const job = flush(gen);
+		repairTailRef.current = repairTailRef.current.then(() => job).then(() => {
+			if (gen !== genRef.current) return;
+			settledRef.current = true;
+			dictationActiveFlag = false;
+			setPhase("idle");
+			for (const w of waitersRef.current.splice(0)) w();
+			warmTokens.refresh();
+		});
+	}, [flush]);
 
 	/** Open the Deepgram socket and wire its messages. `gen` guards staleness. */
 	const openSocket = useCallback(
@@ -626,6 +731,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 	const stop = useCallback(() => {
 		const gen = genRef.current;
 		if (phase !== "recording" && phase !== "connecting") return;
+		settledRef.current = false;
 		setPhase("stopping");
 
 		// Mic dies FIRST — no more audio enqueues (dictate pattern). The
@@ -666,7 +772,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 
 	const finish = useCallback((): Promise<void> => {
 		return new Promise((resolve) => {
-			if (phase === "idle") {
+			if (phase === "idle" || (phase === "stopping" && settledRef.current)) {
 				resolve();
 				return;
 			}

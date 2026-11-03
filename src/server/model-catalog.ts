@@ -48,7 +48,7 @@ import type {
 } from "../core/contracts/models.ts";
 import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolution.ts";
 import { AUTH_PROVIDER_KEYS } from "../core/auth-keys.ts";
-import { BACKGROUND_MODEL_ROLES, MODEL_SLOTS, type BackgroundModelRole, type ModelSlotName, type ModelsSettings } from "../core/settings.ts";
+import { BACKGROUND_MODEL_ROLES, STORED_MODEL_SLOTS, type BackgroundModelRole, type ModelsSettings } from "../core/settings.ts";
 
 /** The picker's client-safe model entry (contract: core/contracts/models.ts). */
 export type ModelDto = ModelCatalogEntry;
@@ -246,7 +246,7 @@ export function validateChatSettings(settings: ChatSettings): SettingsValidation
 }
 
 export function validateModelsSettings(settings: ModelsSettings): SettingsValidation {
-	for (const name of MODEL_SLOTS) {
+	for (const name of STORED_MODEL_SLOTS) {
 		const slot = settings[name];
 		if (!slot) continue;
 		const verdict = validateSlotSpec(name, slot);
@@ -255,7 +255,7 @@ export function validateModelsSettings(settings: ModelsSettings): SettingsValida
 	return { ok: true };
 }
 
-function validateSlotSpec(name: ModelSlotName, slot: { model?: { provider: string; id: string }; thinkingLevel?: ThinkingLevel }): SettingsValidation {
+function validateSlotSpec(name: string, slot: { model?: { provider: string; id: string }; thinkingLevel?: ThinkingLevel }): SettingsValidation {
 	const providers = connectionProviderIds();
 	if (slot.model) {
 		const { provider, id } = slot.model;
@@ -294,7 +294,7 @@ function clampLevelFor(provider: string, id: string, level: ThinkingLevel): Thin
  *  clamped section out; the route applies it after validation. */
 export function clampModelsLevels(settings: ModelsSettings): ModelsSettings {
 	const out: ModelsSettings = {};
-	for (const name of MODEL_SLOTS) {
+	for (const name of STORED_MODEL_SLOTS) {
 		const slot = settings[name];
 		if (!slot?.model) continue;
 		out[name] =

@@ -5,6 +5,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
+import { DictationTextarea } from "@/components/dictation-text";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { cn } from "@/lib/utils";
 import { repairMathForDisplay } from "@/src/core";
@@ -122,7 +123,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 					YOUR THINKING
 				</div>
-				<textarea
+				<DictationTextarea
 					value={thinking}
 					onChange={(e) => {
 						thinkingRef.current = e.target.value;

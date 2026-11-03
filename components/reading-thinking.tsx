@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
+import { DictationTextarea } from "@/components/dictation-text";
 
 /**
  * The reading-thinking field (owner design 2026-10-03, "two questions per
@@ -54,7 +55,7 @@ export function ReadingThinkingField({
 			<div className="pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				Thinking while reading
 			</div>
-			<textarea
+			<DictationTextarea
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				/* py-0.5 (owner round, 2026-10-07): the scrollbar fix. Source

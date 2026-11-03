@@ -107,7 +107,13 @@ describe("deepgramUrl (dictation language setting)", () => {
 		const url = new URL(deepgramUrl("es"));
 		assert.equal(url.searchParams.get("model"), "nova-3");
 		assert.equal(url.searchParams.get("language"), "es");
-		assert.equal(new URL(deepgramUrl("multi")).searchParams.get("language"), "multi");
+		assert.equal(url.searchParams.get("endpointing"), "300");
+		assert.equal(url.searchParams.get("language_hint"), null);
+
+		const multi = new URL(deepgramUrl("multi"));
+		assert.equal(multi.searchParams.get("language"), "multi");
+		assert.equal(multi.searchParams.get("endpointing"), "100");
+		assert.deepEqual(multi.searchParams.getAll("language_hint"), ["en", "fr"]);
 	});
 
 	it("the inline switcher offers exactly en/fr/multi (owner, 2026-10-25)", () => {

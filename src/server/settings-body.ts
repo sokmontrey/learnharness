@@ -23,7 +23,7 @@ import type {
 	ModelsSettings,
 	RoleModelOverride,
 } from "../core/settings.ts";
-import { BACKGROUND_MODEL_ROLES, COMPACTION_THRESHOLD_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS, isDictationLanguage } from "../core/settings.ts";
+import { BACKGROUND_MODEL_ROLES, COMPACTION_THRESHOLD_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, STORED_MODEL_SLOTS, isDictationLanguage } from "../core/settings.ts";
 import { WRITABLE_TOOL_KEYS } from "../core/pending.ts";
 
 /** Parsed-or-rejected — `ok: false` carries the 400's error message. */
@@ -325,17 +325,17 @@ export function parseGraphSettingsBody(body: unknown): SettingsBodyResult<GraphS
 	return { ok: true, settings };
 }
 
-/** models: { strong?, cheap?, vision? } — the slot tiers (model slots
- *  wave, 2026-09-20). Each slot is the same shape as a role override; a
- *  present-but-empty slot object is rejected (absent slot = unset; say
- *  what you mean). Catalog validity is checked by the route
+/** models: { strong?, cheap?, vision?, fast? } — the slot tiers plus the
+ *  optional dictation-repair model. Each slot is the same shape as a role
+ *  override; a present-but-empty slot object is rejected (absent slot =
+ *  unset; say what you mean). Catalog validity is checked by the route
  *  (validateChatSettings discipline). */
 export function parseModelsSettingsBody(body: unknown): SettingsBodyResult<ModelsSettings> {
 	const raw = asRecord(body);
 	if (!raw) return { ok: false, error: "Invalid JSON body" };
 	const settings: ModelsSettings = {};
 	for (const key of Object.keys(raw)) {
-		const known = MODEL_SLOTS as readonly string[];
+		const known = STORED_MODEL_SLOTS as readonly string[];
 		if (!known.includes(key)) {
 			return { ok: false, error: `unknown slot "${key}" (supported: ${known.join(", ")})` };
 		}
@@ -348,7 +348,7 @@ export function parseModelsSettingsBody(body: unknown): SettingsBodyResult<Model
 		if (!parsed.override.model) {
 			return { ok: false, error: `slot "${key}" must set a model (thinkingLevel alone cannot run — absent slot = unset)` };
 		}
-		settings[key as (typeof MODEL_SLOTS)[number]] = parsed.override;
+		settings[key as (typeof STORED_MODEL_SLOTS)[number]] = parsed.override;
 	}
 	return { ok: true, settings };
 }
