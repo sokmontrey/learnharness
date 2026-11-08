@@ -8,7 +8,7 @@ import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { DictationTextarea } from "@/components/dictation-text";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { cn } from "@/lib/utils";
-import { repairMathForDisplay } from "@/src/core";
+import { enterSubmits, repairMathForDisplay } from "@/src/core";
 
 /**
  * The practice dock (practice sessions, owner design 2026-10-04): an
@@ -140,7 +140,8 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 						}
 						// Enter SENDS — the single lane (owner round 2, 2026-10-05);
 						// Shift+Enter is the newline, ⌘/Ctrl+Enter the chord too.
-						if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+						// Touch-first: Enter is a newline too (send = the button).
+						if (enterSubmits(e)) {
 							e.preventDefault();
 							submit();
 						}

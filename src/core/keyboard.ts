@@ -185,6 +185,37 @@ export function isTypingSurface(e: KeyboardEvent): boolean {
 	return target.isContentEditable;
 }
 
+/**
+ * Touch-first device (phone/tablet): its soft keyboard has no Shift, so the
+ * desktop "Enter sends, Shift+Enter newline" chord would make Enter always
+ * send. `pointer: coarse` tracks the PRIMARY input, so a touchscreen laptop
+ * used with a mouse/trackpad stays on the desktop convention. Evaluated at
+ * event time (a detachable keyboard can change the primary input).
+ */
+export function isCoarsePointer(): boolean {
+	return typeof window !== "undefined" && typeof window.matchMedia === "function"
+		? window.matchMedia("(pointer: coarse)").matches
+		: false;
+}
+
+/**
+ * THE ENTER LAW for every multi-line writer (composer, answers, thinking,
+ * practice). Desktop: plain Enter submits, Shift+Enter is a newline,
+ * ⌘/Ctrl+Enter always submits. Touch-first: plain Enter is ALSO a newline
+ * (send is the explicit button); ⌘/Ctrl+Enter still submits for hardware
+ * keyboards. `coarse` is injectable so the policy is testable without a
+ * browser.
+ */
+export function enterSubmits(
+	e: Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">,
+	coarse: boolean = isCoarsePointer(),
+): boolean {
+	if (e.key !== "Enter" || e.altKey) return false;
+	if (e.metaKey || e.ctrlKey) return true;
+	if (e.shiftKey) return false;
+	return !coarse;
+}
+
 /** macOS styling for binding display ("⌘D", "⇧⇥", "⌥↑"). */
 export const IS_MAC =
 	typeof navigator !== "undefined" && /mac/i.test(navigator.platform || navigator.userAgent);

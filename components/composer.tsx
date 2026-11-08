@@ -4,6 +4,7 @@ import { ArrowRightIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
 import { DictationTextarea } from "@/components/dictation-text";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
+import { enterSubmits } from "@/src/core";
 
 /**
  * The chat composer — content row ONLY (the persistent rounded shell lives in
@@ -107,9 +108,10 @@ export function Composer({
 						return;
 					}
 					// Chat convention: Enter sends, Shift+Enter is a newline.
-					// ⌘/Ctrl+Enter also sends — the universal submit shortcut
-					// across every input in the app (thinking field, answers).
-					if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+					// Touch-first keyboards have no Shift — there Enter is a
+					// newline too, and the send button is the send. ⌘/Ctrl+Enter
+					// still sends everywhere (the shared Enter law).
+					if (enterSubmits(e)) {
 						e.preventDefault();
 						act();
 					}

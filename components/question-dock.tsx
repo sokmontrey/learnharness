@@ -34,6 +34,7 @@ import {
 	type QuizToolInput,
 	type SelectMode,
 	type Phase3,
+	enterSubmits,
 } from "@/src/core";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
 
@@ -850,7 +851,8 @@ function QuestionDockForm({
 								}
 								// Chat convention: Enter submits, Shift+Enter is a newline;
 								// ⌘/Ctrl+Enter also submits (universal across the app).
-								if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+								// Touch-first: Enter is a newline too (send = the button).
+								if (enterSubmits(e)) {
 									e.preventDefault();
 									submit();
 								}
@@ -880,7 +882,8 @@ function QuestionDockForm({
 								// THE STANDARD CHORD (owner round 5, 2026-10-05): Enter
 								// submits, Shift+Enter is a newline, ⌘/Ctrl+Enter works
 								// too — identical to the practice dock and the composer.
-								if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+								// Touch-first: Enter is a newline too (send = the button).
+								if (enterSubmits(e)) {
 									e.preventDefault();
 									submit();
 								}

@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createWarmMinter, deepgramUrl, DICTATION_QUICK_LANGUAGES } from "../components/dictation.tsx";
+import { createWarmMinter, DICTATION_QUICK_LANGUAGES } from "../components/dictation.tsx";
 
 describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 	it("caches: concurrent and repeat mints share ONE promise and mint once", async () => {
@@ -37,7 +37,7 @@ describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 		const m = createWarmMinter(
 			async () => {
 				mints++;
-				if (keyless) throw new Error("Dictation needs a Deepgram key");
+				if (keyless) throw new Error("Dictation needs a Gladia key");
 				return "t2";
 			},
 			() => 1000,
@@ -91,7 +91,7 @@ describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 		const m = createWarmMinter(
 			async () => {
 				mints++;
-				throw new Error("Dictation needs a Deepgram key");
+				throw new Error("Dictation needs a Gladia key");
 			},
 			() => 1000,
 			60_000,
@@ -102,20 +102,7 @@ describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 	});
 });
 
-describe("deepgramUrl (dictation language setting)", () => {
-	it("appends the chosen language to the nova-3 streaming params", () => {
-		const url = new URL(deepgramUrl("es"));
-		assert.equal(url.searchParams.get("model"), "nova-3");
-		assert.equal(url.searchParams.get("language"), "es");
-		assert.equal(url.searchParams.get("endpointing"), "300");
-		assert.equal(url.searchParams.get("language_hint"), null);
-
-		const multi = new URL(deepgramUrl("multi"));
-		assert.equal(multi.searchParams.get("language"), "multi");
-		assert.equal(multi.searchParams.get("endpointing"), "100");
-		assert.deepEqual(multi.searchParams.getAll("language_hint"), ["en", "fr"]);
-	});
-
+describe("dictation language switcher", () => {
 	it("the inline switcher offers exactly en/fr/multi (owner, 2026-10-25)", () => {
 		assert.deepEqual(
 			DICTATION_QUICK_LANGUAGES.map((option) => option.id),

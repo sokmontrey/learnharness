@@ -31,10 +31,10 @@ export interface AuthKeyInfo {
 
 export const AUTH_KEYS: readonly AuthKeyInfo[] = [
 	{
-		id: "DEEPGRAM_API_KEY",
-		label: "Deepgram",
-		description: "Speech-to-text key for dictation — needs ≥ Member permission in the Deepgram console to mint tokens.",
-		docsUrl: "https://console.deepgram.com/",
+		id: "GLADIA_API_KEY",
+		label: "Gladia",
+		description: "Speech-to-text key for dictation — Gladia live transcription (English/French code-switching).",
+		docsUrl: "https://app.gladia.io/",
 	},
 	{
 		id: "TAVILY_API_KEY",
@@ -173,7 +173,7 @@ export function validateKeyShape(id: string, rawValue: string): KeyShapeResult {
 		case "BRAVE_API_KEY":
 			// No public format — a length floor + paste hygiene only.
 			return nonEmpty(20);
-		case "DEEPGRAM_API_KEY":
+		case "GLADIA_API_KEY":
 			// No public format — the length floor only catches truncated pastes.
 			return nonEmpty(20);
 		case "ELEVENLABS_API_KEY":

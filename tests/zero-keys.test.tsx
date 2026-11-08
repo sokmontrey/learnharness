@@ -39,7 +39,7 @@ describe("hasProviderKey — the zero-keys pill's truth", () => {
 
 	it("a TOOL key alone does not count — Deepgram unlocks no models", () => {
 		// Deepgram is not in the providers roster: it must never suppress the pill.
-		assert.equal(hasProviderKey([status("DEEPGRAM_API_KEY", true)], PROVIDERS), false);
+		assert.equal(hasProviderKey([status("GLADIA_API_KEY", true)], PROVIDERS), false);
 	});
 
 	it("absent provider keys = zero keys (the pill shows)", () => {
@@ -113,11 +113,11 @@ describe("SetupKeysBody — stage 1's self-contained first-key screen", () => {
 
 describe("the dictation keyless seam (owner dictation trio)", () => {
 	it("the client-authored short line — not the route's dev-speak", () => {
-		assert.equal(DICTATION_KEYLESS, "Dictation needs a Deepgram key");
+		assert.equal(DICTATION_KEYLESS, "Dictation needs a Gladia key");
 	});
 
 	it("the Deepgram row id matches the keys store (KeysSection openRow)", () => {
-		assert.equal(DEEPGRAM_KEY_ID, "DEEPGRAM_API_KEY");
+		assert.equal(DEEPGRAM_KEY_ID, "GLADIA_API_KEY");
 	});
 });
 /** A minimal catalog double — only the two halves the strong-keyless guard

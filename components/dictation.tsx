@@ -95,22 +95,6 @@ import { Hint } from "@/components/ui/hint";
  * endpointing=100 plus language_hint for en and fr (hints bias detection;
  * they do not restrict it).
  */
-const DG_URL =
-	"wss://api.deepgram.com/v1/listen" +
-	"?model=nova-3" +
-	"&encoding=linear16" +
-	"&sample_rate=16000" +
-	"&channels=1" +
-	"&smart_format=true" +
-	"&punctuate=true";
-
-export function deepgramUrl(language: DictationLanguage): string {
-	if (language === "multi") {
-		return `${DG_URL}&endpointing=100&language=multi&language_hint=en&language_hint=fr`;
-	}
-	return `${DG_URL}&endpointing=300&language=${language}`;
-}
-
 /** The resolved dictation language — module-level like the warm token, so
  *  the click path never waits on a settings read. Re-read at page mount
  *  and on every general-section save; a failed read keeps the last value. */
@@ -220,14 +204,15 @@ export const METER_CELLS = 48;
 
 /** The Deepgram key's id in the keys store (the env-var name — the Keys
  *  section's openRow state and the PUT /api/keys/:id seam). */
-export const DEEPGRAM_KEY_ID = "DEEPGRAM_API_KEY";
+export const GLADIA_KEY_ID = "GLADIA_API_KEY";
+export const DEEPGRAM_KEY_ID = GLADIA_KEY_ID;
 
 /** The client-authored KEYLESS line (zero-keys wave, owner 2026-09-25):
  * the token route's raw 503 message is dev-speak ("add it to auth.json
  * (desktop) or .env.local (dev)") — the surface says the short truth
  * instead. Exported for pins; the errored idle button's click recognizes
  * it and deep-links Settings → Keys → the Deepgram row. */
-export const DICTATION_KEYLESS = "Dictation needs a Deepgram key";
+export const DICTATION_KEYLESS = "Dictation needs a Gladia key";
 
 /** Mint a fresh short-lived token (the route holds the real key
  *  server-side). Module-level: the start path's warm cache and the
@@ -237,12 +222,12 @@ export const DICTATION_KEYLESS = "Dictation needs a Deepgram key";
  *  (zero-keys wave, owner 2026-09-25). */
 async function mintFreshToken(): Promise<string> {
 	const res = await fetch("/api/stt/token");
-	const data = (await res.json()) as { token?: string; message?: string };
-	if (!res.ok || !data.token) {
+	const data = (await res.json()) as { url?: string; message?: string };
+	if (!res.ok || !data.url) {
 		if (res.status === 503) throw new Error(DICTATION_KEYLESS);
 		throw new Error(data.message ?? `token route ${res.status}`);
 	}
-	return data.token;
+	return data.url;
 }
 
 /** Warm-token cache (mitigation D, owner 2026-09-27): the click path takes
@@ -578,18 +563,12 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 
 	/** Open the Deepgram socket and wire its messages. `gen` guards staleness. */
 	const openSocket = useCallback(
-		(gen: number, token: string) => {
-			// Minted JWTs authenticate via the "bearer" subprotocol — ["token",
-			// jwt] is rejected at the handshake (verified live; "token" is for
-			// raw API keys only, as in the owner's pi dictate extension).
-			const ws = new WebSocket(deepgramUrl(dictationLanguage), ["bearer", token]);
+		(gen: number, url: string) => {
+			const ws = new WebSocket(url);
 			wsRef.current = ws;
 
 			ws.addEventListener("open", () => {
 				if (gen !== genRef.current) return;
-				// Mitigation A: everything captured during the handshake (or a
-				// reconnect gap) goes out now, in order — Deepgram accepts
-				// faster-than-realtime sends.
 				for (const frame of pendingRef.current) ws.send(frame);
 				pendingRef.current = [];
 				setPhase("recording");
@@ -602,38 +581,27 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 				} catch {
 					return;
 				}
-				if (msg.type === "Results") {
-					const text: string | undefined = msg.channel?.alternatives?.[0]?.transcript;
-					// Only finals stream (interim_results=false). DEFERRED (owner
-					// round 2): they buffer here and reach the input once, at
-					// teardown — the meter is the only live feedback.
-					if (msg.is_final && text) bufferRef.current.push(text);
+				if (msg.type === "transcript") {
+					const text: string | undefined = msg.data?.utterance?.text;
+					if (msg.data?.is_final && text) bufferRef.current.push(text);
 				}
 			});
 			ws.addEventListener("close", (ev) => {
 				if (gen !== genRef.current) return;
-				if (ev.code === 1000) {
-					// Our own CloseStream landing: finalize now — the stop path's
-					// safety net stays as the no-close backstop only.
-					cleanup();
-					return;
-				}
-				// Abnormal close mid-run: ONE reconnect with a fresh token (the
-				// research pass: resume is our job, no SDK to lean on).
 				if (reconnectsRef.current < 1) {
 					reconnectsRef.current++;
-					mintFreshToken() // always FRESH — a stale warm token is the likely culprit
-						.then((t) => {
-							if (gen === genRef.current) openSocket(gen, t);
+					mintFreshToken()
+						.then((u) => {
+							if (gen === genRef.current) openSocket(gen, u);
 						})
 						.catch(() => {
 							if (gen === genRef.current) {
-								setError("Deepgram reconnect failed");
+								setError("Gladia reconnect failed");
 								cleanup();
 							}
 						});
 				} else {
-					setError(`Deepgram connection lost (${ev.code})`);
+					setError(`Gladia connection lost (${ev.code})`);
 					cleanup();
 				}
 			});
@@ -713,19 +681,17 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 			return;
 		}
 		if (gen !== genRef.current) return;
-		let token: string;
+		let url: string;
 		try {
-			token = await tokenPromise;
+			url = await tokenPromise;
 		} catch (e) {
 			if (gen !== genRef.current) return;
-			setError(e instanceof Error ? e.message : "token unavailable");
+			setError(e instanceof Error ? e.message : "session unavailable");
 			cleanup();
 			return;
 		}
 		if (gen !== genRef.current) return;
-		// Mitigation B: the handshake fires the moment the graph is live,
-		// overlapping any remaining token wait — mic-gated, never before it.
-		openSocket(gen, token);
+		openSocket(gen, url);
 	}, [openSocket, cleanup]);
 
 	const stop = useCallback(() => {
@@ -746,7 +712,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		const ws = wsRef.current;
 		if (ws && ws.readyState === WebSocket.OPEN) {
 			try {
-				ws.send(JSON.stringify({ type: "CloseStream" }));
+				ws.send(JSON.stringify({ type: "stop_recording" }));
 			} catch {
 				cleanup();
 				return;
@@ -924,7 +890,12 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 						<span className="max-w-full truncate">{error ?? "Dictate"}</span>
 					</button>
 				</Hint>
-				<DictationLanguageSwitcher />
+				{/* The mobile stats row is narrow: the mic must keep the room.
+				    The language quick-switch is a secondary control (the same
+				    setting lives in Settings → General). */}
+				<span className="hidden sm:inline-flex">
+					<DictationLanguageSwitcher />
+				</span>
 			</div>
 		);
 	}
@@ -966,7 +937,9 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 					/>
 				))}
 			</div>
-			<DictationLanguageSwitcher disabled />
+			<span className="hidden sm:inline-flex">
+				<DictationLanguageSwitcher disabled />
+			</span>
 		</div>
 	);
 }
