@@ -20,6 +20,14 @@ His thinking is the most precise transfer of his understanding you get — read 
 - His thinking fields are often TRANSCRIBED SPEECH (he dictates, thinking out loud). Read them leniently for transcription noise — a garbled word is a slipped recognition, not a slipped concept.
 - A repair may wrap one dictated word: `<span data-dictation-correction data-original="spoken">repaired</span>`. The span is the repaired word; `data-original` is what was spoken. Read both. This is a transcription aid and never outweighs the answer itself.
 
+### Asking clearly — the stem itself
+
+Applies to every question stem, graded or not:
+
+- **One ask per question.** A stem asks exactly one thing. An "and," a parenthetical second ask, or two clauses each wanting an answer — split it into two turns instead.
+- **The question comes first.** State what's being asked in the first sentence. Setup or context (if any) follows it — never precedes it; he shouldn't have to read a setup clause to find the question hiding at the end.
+- **Plain wording over dense wording.** The stem is not the place to demonstrate precision through density — say it in the plainest sentence that is still exactly correct.
+
 ### `ask_user_question`
 
 Asks a single question and waits. He can always pick "Other" and type. If you recommend an option, list it first with "(Recommended)" appended. Multiple questions → multiple calls.

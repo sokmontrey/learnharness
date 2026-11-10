@@ -42,6 +42,7 @@ import { MermaidError } from "@/components/mermaid-error";
 import { blurAfterPointerClick } from "@/components/focus-hygiene";
 import { chartSize, useSessionMermaid } from "@/components/session-overlay";
 import { Hint } from "@/components/ui/hint";
+import { FootnotePin } from "@/components/footnote-pin";
 
 // ─── The one affordance: the hover-reveal corner copy ────────────────────────
 
@@ -469,4 +470,5 @@ export const mdComponents = {
 	span: MathDisplay,
 	strong: MarkdownStrong,
 	blockquote: MarkdownBlockquote,
+	"footnote-pin": FootnotePin,
 };

@@ -46,6 +46,7 @@ export const BACKGROUND_MODEL_ROLES = [
 	"visualMaker",
 	"extractor",
 	"auditor",
+	"explainer",
 ] as const;
 
 export type BackgroundModelRole = (typeof BACKGROUND_MODEL_ROLES)[number];
@@ -231,6 +232,7 @@ export const ROLE_SLOT: Readonly<Record<ModelRole, ModelSlotName>> = {
 	demoBuilder: "cheap",
 	extractor: "cheap",
 	auditor: "cheap",
+	explainer: "cheap",
 	visualMaker: "vision",
 	pdfReader: "vision",
 };

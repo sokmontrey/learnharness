@@ -34,6 +34,7 @@ import {
   type PluginConfig,
 } from "streamdown";
 import { mdComponents } from "@/components/md-blocks";
+import { remarkFootnotePins } from "@/components/footnote-pin";
 import { transformMathDelimiters } from "@/src/core";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
@@ -346,10 +347,16 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 // `code` override intercepts mermaid fences and renders via
 // components/mermaid-render.ts — streamdown's internal mermaid machinery
 // (the plugin entry + the `mermaid` prop) is retired with it.
+// remarkFootnotePins (annotation wave, owner 2026-11) rides the SAME slot
+// as remarkBreaks, and must run AFTER it's in the GFM-parsed tree (remark-
+// gfm already produced footnoteReference/footnoteDefinition nodes by the
+// time this slot runs) — order within the slot doesn't matter here since
+// remarkBreaks only touches break/paragraph nodes, footnote pins only
+// touch footnote nodes.
 export const streamdownPlugins = {
   cjk: {
     ...cjk,
-    remarkPluginsAfter: [...cjk.remarkPluginsAfter, remarkBreaks],
+    remarkPluginsAfter: [...cjk.remarkPluginsAfter, remarkBreaks, remarkFootnotePins],
   },
   code,
   math: createMathPlugin({ singleDollarTextMath: true }),

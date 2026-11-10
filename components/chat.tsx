@@ -49,11 +49,13 @@ import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
-import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
+import { ArrowRightIcon, DumbbellIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
 import { TtsSelectionButton } from "@/components/tts-selection-button";
+import { ExplainProvider, useExplain } from "@/components/explain-panel";
+import { ExplainSelectionButton } from "@/components/explain-selection-button";
 import { SessionMessageNavigation } from "@/components/session-navigation";
 import { PracticeDock } from "@/components/practice-dock";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
@@ -182,6 +184,34 @@ function SystemLine({ children, testId }: { children: React.ReactNode; testId?: 
 	);
 }
 
+/** The persistent per-message "explain" affordance (annotation wave, owner
+ *  2026-11): a quiet corner button (CopyCorner's hover-reveal idiom), one
+ *  per assistant message — opens the margin panel's free-text ask form
+ *  (ExplainProvider.open with no `pointer`). A CHILD component on purpose:
+ *  it reads useExplain(), and Chat() itself renders ABOVE where
+ *  ExplainProvider mounts (it's Chat's own return value), so Chat can't
+ *  call that hook directly — only a descendant can. Absent/empty message
+ *  ids (legacy transcripts) render nothing: the explainer's context
+ *  window anchors on the real id, and there's nothing honest to anchor to. */
+function ExplainAskButton({ messageId }: { messageId: string }) {
+	const { open } = useExplain();
+	if (!messageId) return null;
+	return (
+		<button
+			type="button"
+			aria-label="Ask about this message"
+			data-testid="explain-ask-button"
+			className="absolute top-0 right-0 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/explain-msg:opacity-100"
+			onClick={(e) => {
+				const rect = e.currentTarget.getBoundingClientRect();
+				open({ targetMessageId: messageId, anchorY: rect.top });
+			}}
+		>
+			<SparklesIcon className="size-3.5" />
+		</button>
+	);
+}
+
 function isSubagentSteer(m: LhViewMessage): boolean {
 	return (m.metadata as { subagentResult?: unknown } | undefined)?.subagentResult != null;
 }
@@ -241,6 +271,7 @@ export function Chat({
 		useChatSession({ chatId, initialMessages, initiallyInFlight });
 
 	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);
+	const columnRef = useRef<HTMLDivElement | null>(null);
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
 
@@ -1173,6 +1204,7 @@ export function Chat({
 	};
 
 	return (
+		<ExplainProvider chatId={chatId} columnRef={columnRef}>
 		<ChatActionsContext.Provider
 			value={{
 				chatId,
@@ -1323,10 +1355,11 @@ export function Chat({
 				<SessionFind scopeRef={sessionFindScopeRef} scrollContextRef={scrollContextRef} />
 				<div ref={sessionFindScopeRef} className="relative flex min-h-0 flex-1">
 				<TtsSelectionButton scopeRef={sessionFindScopeRef} />
+				<ExplainSelectionButton scopeRef={sessionFindScopeRef} />
 				<Conversation className="h-full min-w-0 flex-1" initial="instant" contextRef={scrollContextRef}>
 					<SessionMessageNavigation />
 					<ConversationContent className="min-h-full gap-0 p-0">
-						<div data-session-find-root="" className={`${COLUMN} flex flex-1 flex-col gap-4 pt-4`}>
+						<div ref={columnRef} data-session-find-root="" className={`${COLUMN} flex flex-1 flex-col gap-4 pt-4`}>
 							{messages.length === 0 && !busy && (
 								<ConversationEmptyState
 									title="New session"
@@ -1446,7 +1479,8 @@ export function Chat({
 												</div>
 											</div>
 									) : (
-									<Message from="assistant" className="max-w-full">
+									<Message from="assistant" className="group/explain-msg relative max-w-full">
+									<ExplainAskButton messageId={m.id ?? ""} />
 									<MessageContent className="w-full">
 											{m.parts.map((part, pi) => {
 												const isLastPart = mi === messages.length - 1 && pi === m.parts.length - 1;
@@ -1716,6 +1750,7 @@ export function Chat({
 			}}
 		/>
 		</ChatActionsContext.Provider>
+		</ExplainProvider>
 	);
 }
 

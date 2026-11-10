@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
+import { buildInfo } from "@/src/core";
 import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
@@ -953,6 +954,18 @@ function SessionsSidebar() {
 								<SettingsIcon className="size-3" />
 								Settings
 							</button>
+						</Hint>
+						{/* The build stamp (versioning wave, owner 2026-11): "is the
+						    running app actually this build" — version + short commit,
+						    the built-at timestamp on hover. Quiet, bottom-pinned, never
+						    competing with Settings for attention. */}
+						<Hint label={`Built ${new Date(buildInfo.builtAt).toLocaleString()}`} side="right">
+							<div
+								data-testid="build-stamp"
+								className="px-2 pt-1 font-mono text-[10px] text-muted-foreground/50"
+							>
+								v{buildInfo.version} · {buildInfo.commit}
+							</div>
 						</Hint>
 					</div>
 				</div>
