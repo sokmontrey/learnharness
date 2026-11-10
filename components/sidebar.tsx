@@ -73,9 +73,16 @@ declare global {
 	}
 }
 
-const SidebarContext = createContext<{ open: boolean; toggle: () => void }>({
+const SidebarContext = createContext<{
+	open: boolean;
+	toggle: () => void;
+	narrow: boolean;
+	closeDrawer: () => void;
+}>({
 	open: false,
 	toggle: () => {},
+	narrow: false,
+	closeDrawer: () => {},
 });
 
 export function useSidebar() {
@@ -94,6 +101,12 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	// mismatch); the stored value is applied after mount.
 	const [open, setOpen] = useState(false);
 	const [narrow, setNarrow] = useState(false);
+	// Narrow-screen drawer (web): below SIDEBAR_AUTOCLOSE the sidebar is
+	// auto-collapsed and the toggle opens this overlay instead of widening
+	// a window (a phone has no wider window). Independent of the persisted
+	// desktop preference, so widening past the threshold restores exactly
+	// the state the user last chose inline.
+	const [drawerOpen, setDrawerOpen] = useState(false);
 	const [mounted, setMounted] = useState(false);
 
 	useEffect(() => {
@@ -127,32 +140,75 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	// Narrow-window auto-close/auto-restore (see SIDEBAR_AUTOCLOSE note):
 	// fires only on actual resizes — a boolean compare, no layout work.
 	// Both this and the mount effect land before the first paint, so a
-	// narrow window never flashes the open sidebar on load.
+	// narrow window never flashes the open sidebar on load. WEB PARITY
+	// (mobile pass): the same collapse applies in the browser now; only
+	// the open action differs (Electron widens the window, the web opens
+	// the overlay drawer below).
 	useEffect(() => {
-		if (!IS_ELECTRON) return; // plain-browser tabs open freely
 		const onResize = () => setNarrow(window.innerWidth < SIDEBAR_AUTOCLOSE);
 		onResize();
 		window.addEventListener("resize", onResize);
 		return () => window.removeEventListener("resize", onResize);
 	}, []);
 
+	// Mobile keyboard truth (iOS Safari): the layout viewport does NOT
+	// shrink when the soft keyboard opens, so an h-dvh frame leaves the
+	// composer underneath it. visualViewport.height does shrink. Below the
+	// auto-collapse threshold we carry it as --lh-vvh and the app frames
+	// use it with a 100dvh fallback; desktop/Electron clears the var.
+	useEffect(() => {
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const root = document.documentElement;
+		const apply = () => {
+			if (window.innerWidth >= SIDEBAR_AUTOCLOSE) {
+				root.style.removeProperty("--lh-vvh");
+				return;
+			}
+			root.style.setProperty("--lh-vvh", `${Math.round(vv.height)}px`);
+		};
+		apply();
+		vv.addEventListener("resize", apply);
+		vv.addEventListener("scroll", apply);
+		window.addEventListener("resize", apply);
+		return () => {
+			vv.removeEventListener("resize", apply);
+			vv.removeEventListener("scroll", apply);
+			window.removeEventListener("resize", apply);
+			root.style.removeProperty("--lh-vvh");
+		};
+	}, []);
+
+	// Leaving the narrow band returns the sidebar to the inline,
+	// remembered-preference behavior; the drawer has no meaning there.
+	useEffect(() => {
+		if (!narrow) setDrawerOpen(false);
+	}, [narrow]);
+
 	const toggle = useCallback(() => {
-		// Opening while narrow (auto-closed, or the user's own closed-at-
-		// narrow): ask the shell to widen to the threshold — the resize
-		// listener flips `narrow` and the sidebar appears. The preference
-		// persists like any other open, so a restart at a narrow width
-		// still auto-restores when widened.
-		if (narrow && !open) {
-			localStorage.setItem(STORAGE_KEY, "0");
-			setOpen(true);
-			window.lh?.expandWindow();
+		// Opening while narrow (auto-collapsed): Electron keeps its original
+		// contract — ask the shell to widen to the threshold, and the resize
+		// listener flips `narrow` so the inline sidebar appears. A phone has
+		// no wider window, so the web opens the overlay drawer instead.
+		// The preference persists like any other open, so a restart at a
+		// narrow width still auto-restores when widened.
+		if (narrow) {
+			if (IS_ELECTRON) {
+				localStorage.setItem(STORAGE_KEY, "0");
+				setOpen(true);
+				window.lh?.expandWindow();
+				return;
+			}
+			setDrawerOpen((v) => !v);
 			return;
 		}
 		setOpen((v) => {
 			localStorage.setItem(STORAGE_KEY, v ? "0" : "1");
 			return !v;
 		});
-	}, [narrow, open]);
+	}, [narrow]);
+
+	const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
 	// ⌘B: the global shortcut dispatches kbdEventForAction("toggle-sidebar")
 	// and the context answers on exactly that name — the shared spelling
@@ -168,9 +224,19 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	}, [toggle]);
 
 	return (
-		<SidebarContext.Provider value={{ open: open && !narrow, toggle }}>
+		<SidebarContext.Provider
+			value={{ open: narrow ? drawerOpen : open, toggle, narrow, closeDrawer }}
+		>
 			{/* transitions gated on mount: no slide-in flash on page load */}
-			<div className={cn("flex h-dvh", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
+			<div
+				className={cn(
+					"flex",
+					mounted && "[&_.sidebar-motion]:transition-[width,transform,margin,opacity]",
+				)}
+				style={{ height: "var(--lh-vvh, 100dvh)" }}
+			>
+				{children}
+			</div>
 		</SidebarContext.Provider>
 	);
 }
@@ -379,7 +445,7 @@ export type SessionKindFilter = "teach" | "all" | "practice";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
 
 function SessionsSidebar() {
-	const { open, toggle } = useSidebar();
+	const { open, toggle, narrow, closeDrawer } = useSidebar();
 	const [chats, setChats] = useState<ChatListItem[] | null>(null);
 	const [query, setQuery] = useState("");
 	const [kindFilter, setKindFilter] = useState<SessionKindFilter>("all");
@@ -394,6 +460,23 @@ function SessionsSidebar() {
 	const pathname = usePathname();
 	const router = useRouter();
 	const { open: openSettings } = useSettingsDialog();
+
+	// Mobile drawer lifecycle: a navigation closes it (the destination is
+	// the point), and Esc is the standard escape hatch. Both no-ops for the
+	// inline desktop sidebar.
+	useEffect(() => {
+		if (narrow) closeDrawer();
+	}, [pathname, narrow, closeDrawer]);
+	useEffect(() => {
+		if (!narrow || !open) return;
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			e.stopPropagation();
+			closeDrawer();
+		};
+		document.addEventListener("keydown", onKeyDown);
+		return () => document.removeEventListener("keydown", onKeyDown);
+	}, [narrow, open, closeDrawer]);
 
 	/* New session (owner, 2026-09-13): NO POST — the button opens the
 	   sessionless draft view; the session is created only when the first
@@ -635,11 +718,32 @@ function SessionsSidebar() {
 	}, [open, pathname, refresh]);
 
 	return (
-		<aside
-			className={cn("sidebar-motion shrink-0 overflow-hidden duration-200", open ? "w-72" : "w-0")}
-			aria-hidden={!open}
-		>
-			<div className="flex h-full w-72 flex-col border-r bg-background">
+		<>
+			{narrow && open && (
+				<button
+					type="button"
+					aria-label="Close sidebar"
+					onClick={closeDrawer}
+					className="fixed inset-0 z-[45] bg-black/40 backdrop-blur-[1px]"
+				/>
+			)}
+			<aside
+				className={cn(
+					"sidebar-motion shrink-0 overflow-hidden duration-200",
+					narrow
+						? cn(
+								"fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shadow-xl transition-transform",
+								open ? "translate-x-0" : "-translate-x-full",
+							)
+						: open
+							? "w-72"
+							: "w-0",
+				)}
+				style={narrow ? { height: "var(--lh-vvh, 100dvh)" } : undefined}
+				aria-hidden={!open}
+				{...(narrow && !open ? { inert: true } : {})}
+			>
+				<div className="flex h-full w-full flex-col border-r bg-background">
 				{/* LH wordmark — the owner's header; close toggle sits at the edge.
 				    Merged chrome (2026-09-17): in Electron this band is the
 				    window's drag surface and starts after the traffic lights
@@ -928,6 +1032,7 @@ function SessionsSidebar() {
 					onDeleted={onDeleted}
 				/>
 			</aside>
+		</>
 	);
 }
 

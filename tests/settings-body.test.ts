@@ -33,6 +33,14 @@ describe("parseGeneralSettingsBody", () => {
 		assert.equal(parseGeneralSettingsBody("x").ok, false);
 		assert.equal(parseGeneralSettingsBody({ autoUpdate: "yes" }).ok, false);
 	});
+
+	it("dictationLanguage: a supported language passes, anything else is a 400", () => {
+		const es = parseGeneralSettingsBody({ autoUpdate: true, dictationLanguage: "es" });
+		assert.ok(es.ok);
+		assert.deepEqual(es.settings, { autoUpdate: true, dictationLanguage: "es" });
+		assert.equal(parseGeneralSettingsBody({ dictationLanguage: "klingon" }).ok, false);
+		assert.equal(parseGeneralSettingsBody({ dictationLanguage: 3 }).ok, false);
+	});
 });
 
 describe("parseAgentSettingsBody", () => {
@@ -274,7 +282,7 @@ describe("parseModelsSettingsBody (model slots wave, 2026-09-20)", () => {
 	it("unknown slots are 400s with the supported list", () => {
 		const bad = parseModelsSettingsBody({ mega: { thinkingLevel: "high" } });
 		assert.equal(bad.ok, false);
-		if (!bad.ok) assert.match(bad.error, /unknown slot "mega" \(supported: strong, cheap, vision\)/);
+		if (!bad.ok) assert.match(bad.error, /unknown slot "mega" \(supported: strong, cheap, vision, fast\)/);
 	});
 
 	it("a present-but-empty slot object is rejected (absent slot = unset)", () => {

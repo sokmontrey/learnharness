@@ -83,8 +83,10 @@ test("Providers has exactly four ordered sections; unknown variables stay masked
  };
  fixture(); await mount(<KeysSection />);
  const headings = [...document.querySelectorAll('[data-testid^="group-"] > p')].map((el) => el.textContent);
- assert.deepEqual(headings, ["Model API keys", "Subscriptions", "Dictation", "Search"]);
+ assert.deepEqual(headings, ["Model API keys", "Subscriptions", "Dictation", "Read-aloud", "Pronunciation", "Search"]);
  assert(byTest("key-deepgram_api_key").closest('[data-testid="group-dictation"]'));
+ assert(byTest("key-elevenlabs_api_key").closest('[data-testid="group-read-aloud"]'));
+ assert(byTest("key-toneperfect_api_key").closest('[data-testid="group-pronunciation"]'));
  assert(byTest("key-tavily_api_key").closest('[data-testid="group-search"]'));
  assert(byTest("key-brave_api_key").closest('[data-testid="group-search"]'));
  assert(byTest("unknown-FUTURE_VAR").closest('[data-testid="group-provider-keys"]'));

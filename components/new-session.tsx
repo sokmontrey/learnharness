@@ -30,7 +30,7 @@ export type DraftPick = { id: string; name: string; statement: string };
  * server-side (per-session models, owner 2026-09-28).
  */
 
-const DOCK = "mx-auto w-full max-w-[46rem] px-4";
+const DOCK = "mx-auto w-full max-w-[46rem] px-3 md:px-4";
 
 /**
  * The draft's whole behavior as one pure seam: create the session (title =
@@ -158,7 +158,7 @@ export function DraftShell({
 		 * (the only pointer-events-auto spot), the empty state carrying the
 		 * orientation. The chain picker then owns the column top exactly
 		 * like the graph view's — no stacked bars. */
-		<div className="relative flex h-dvh">
+		<div className="relative flex" style={{ height: "var(--lh-vvh, 100dvh)" }}>
 			{/* Window-drag strip — deliberately FIRST in the DOM (the mask
 			    law: no-drag subtraction resolves by DOM order, so every
 			    carved control later in the tree subtracts correctly). */}
@@ -182,7 +182,10 @@ export function DraftShell({
 							</ConversationContent>
 						</Conversation>
 						<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
-						<div className="bg-background pb-4">
+						<div
+							className="bg-background"
+							style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+						>
 							<div className={DOCK}>
 								<ComposerActions
 									picker={(picks.length > 0 || mode === "practice") && (

@@ -77,10 +77,11 @@ import { NativeSubscriptionBackgroundAccess } from "./subscription-connections";
 
 /** One slot's display identity — the tier's roster as the row hint rides
  *  with the resolved default (owner: the hint ALWAYS names the default). */
-const SLOT_META: Record<ModelSlotName, { label: string; roster: string }> = {
+const SLOT_META: Record<ModelSlotName | "fast", { label: string; roster: string }> = {
 	strong: { label: "Strong", roster: "The main model for your sessions" },
 	cheap: { label: "Cheap", roster: "The assistants that research, build demos, and grade your work" },
 	vision: { label: "Vision", roster: "The assistants that draw and read PDFs" },
+	fast: { label: "Fast", roster: "Repairs dictated speech after you stop. Leave unset to insert the transcript as spoken." },
 };
 
 /** The search engines this wave ships (src/core/search.ts) + their labels. */
@@ -139,7 +140,7 @@ export function composeGraphTools(agent: AgentSettings | undefined, on: boolean)
  *  as the schema's ModelSlot. Pure — exported for tests. */
 export function composeSlotModel(
 	models: ModelsSettings | undefined,
-	slot: ModelSlotName,
+	slot: keyof ModelsSettings,
 	provider: string,
 	id: string,
 	thinking: string,
@@ -318,7 +319,7 @@ export function AgentSection({
 	const [segmentStatus, setSegmentStatus] = useState<string | null>(null);
 	/** One open dropdown for the whole section: which slot (or the search
 	 *  row), which kind. */
-	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
+	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "fast" | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
 	const menuAnchorRef = useRef<HTMLSpanElement>(null);
 
 	const refreshSearch = () =>
@@ -615,7 +616,7 @@ export function AgentSection({
 	return (
 		<>
 			<SettingsGroup label="Models" testid="group-models">
-				{MODEL_SLOTS.map((slot) => {
+				{([...MODEL_SLOTS, "fast"] as const).map((slot) => {
 					const override = models?.[slot];
 					const modelId = override?.model?.id ?? "";
 					const provider = override?.model?.provider ?? "";
@@ -625,7 +626,7 @@ export function AgentSection({
 					// carries the roster, the triggers read "—" when unpicked — but
 					// the pin still governs the thinking level LIST when no override
 					// names a model to read levels from.
-					const pin = slots?.[slot];
+					const pin = slot === "fast" ? undefined : slots?.[slot];
 					// The model whose levels govern the thinking list: the
 					// override, else the resolved pin (when it's in the federated
 					// catalog); the standard ladder as the last fallback.
@@ -693,7 +694,9 @@ export function AgentSection({
 											footer={
 												catalog && catalog.length === 0
 													? "No models — add a provider key in Keys"
-													: "Runs every agent of this tier"
+													: slot === "fast"
+														? "Repairs dictated speech"
+														: "Runs every agent of this tier"
 											}
 										/>
 									</MenuShell>

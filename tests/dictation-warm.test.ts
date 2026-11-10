@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createWarmMinter } from "../components/dictation.tsx";
+import { createWarmMinter, DICTATION_QUICK_LANGUAGES } from "../components/dictation.tsx";
 
 describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 	it("caches: concurrent and repeat mints share ONE promise and mint once", async () => {
@@ -37,7 +37,7 @@ describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 		const m = createWarmMinter(
 			async () => {
 				mints++;
-				if (keyless) throw new Error("Dictation needs a Deepgram key");
+				if (keyless) throw new Error("Dictation needs a Gladia key");
 				return "t2";
 			},
 			() => 1000,
@@ -91,7 +91,7 @@ describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 		const m = createWarmMinter(
 			async () => {
 				mints++;
-				throw new Error("Dictation needs a Deepgram key");
+				throw new Error("Dictation needs a Gladia key");
 			},
 			() => 1000,
 			60_000,
@@ -99,5 +99,14 @@ describe("warm-token cache (mitigation D, owner 2026-09-27)", () => {
 		m.refresh(); // must not reject (unhandled rejection would be a bug)
 		await new Promise((r) => setTimeout(r, 0)); // let the background mint settle
 		assert.equal(mints, 1);
+	});
+});
+
+describe("dictation language switcher", () => {
+	it("the inline switcher offers exactly en/fr/multi (owner, 2026-10-25)", () => {
+		assert.deepEqual(
+			DICTATION_QUICK_LANGUAGES.map((option) => option.id),
+			["en", "fr", "multi"],
+		);
 	});
 });

@@ -31,10 +31,10 @@ export interface AuthKeyInfo {
 
 export const AUTH_KEYS: readonly AuthKeyInfo[] = [
 	{
-		id: "DEEPGRAM_API_KEY",
-		label: "Deepgram",
-		description: "Speech-to-text key for dictation — needs ≥ Member permission in the Deepgram console to mint tokens.",
-		docsUrl: "https://console.deepgram.com/",
+		id: "GLADIA_API_KEY",
+		label: "Gladia",
+		description: "Speech-to-text key for dictation — Gladia live transcription (English/French code-switching).",
+		docsUrl: "https://app.gladia.io/",
 	},
 	{
 		id: "TAVILY_API_KEY",
@@ -47,6 +47,18 @@ export const AUTH_KEYS: readonly AuthKeyInfo[] = [
 		label: "Brave Search",
 		description: "Web-search engine for the researcher sub-agent — the alternative to Tavily. Setting the key activates it.",
 		docsUrl: "https://brave.com/search/api/",
+	},
+	{
+		id: "ELEVENLABS_API_KEY",
+		label: "ElevenLabs",
+		description: "Read-aloud voice for transcript selections — Flash v2.5, billed per character.",
+		docsUrl: "https://elevenlabs.io/app/settings/api-keys",
+	},
+	{
+		id: "TONEPERFECT_API_KEY",
+		label: "TonePerfect",
+		description: "Pronunciation scoring for practice attempts — 50 free credits, then from $10/mo.",
+		docsUrl: "https://api.toneperfect.app/docs",
 	},
 ] as const;
 
@@ -161,8 +173,14 @@ export function validateKeyShape(id: string, rawValue: string): KeyShapeResult {
 		case "BRAVE_API_KEY":
 			// No public format — a length floor + paste hygiene only.
 			return nonEmpty(20);
-		case "DEEPGRAM_API_KEY":
+		case "GLADIA_API_KEY":
 			// No public format — the length floor only catches truncated pastes.
+			return nonEmpty(20);
+		case "ELEVENLABS_API_KEY":
+			// No documented public format — length floor + paste hygiene only.
+			return nonEmpty(20);
+		case "TONEPERFECT_API_KEY":
+			// No documented public format — length floor + paste hygiene only.
 			return nonEmpty(20);
 		default:
 			return { ok: false, error: `unknown key "${id}" (supported: ${[...AUTH_KEY_IDS].join(", ")})` };

@@ -2,6 +2,8 @@
 
 import { useCallback } from "react";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
+import { DictationTextarea } from "@/components/dictation-text";
+import { enterSubmits } from "@/src/core";
 
 /**
  * The reading-thinking field (owner design 2026-10-03, "two questions per
@@ -54,7 +56,7 @@ export function ReadingThinkingField({
 			<div className="pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				Thinking while reading
 			</div>
-			<textarea
+			<DictationTextarea
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				/* py-0.5 (owner round, 2026-10-07): the scrollbar fix. Source
@@ -80,7 +82,10 @@ export function ReadingThinkingField({
 					// (and the universal ⌘/Ctrl+Enter) opens it — the dictation
 					// flush lands HERE first via the caller's finishDictation,
 					// so spoken thoughts ride along. Shift+Enter stays a newline.
-					if (e.key === "Enter" && onOpen !== undefined && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+					// Touch-first: Enter is a newline here as in every
+					// multi-line writer; the dock's "Open" button reveals the
+					// waiting check. ⌘/Ctrl+Enter still opens it.
+					if (e.key === "Enter" && onOpen !== undefined && enterSubmits(e)) {
 						e.preventDefault();
 						e.stopPropagation();
 						onOpen();

@@ -9,10 +9,12 @@ import { SetupDialog } from "@/components/setup-dialog";
 import { ComposerActions, NodePickerControl } from "@/components/composer-actions";
 import { useStrongKeyless, useZeroKeys, ZeroKeysPill } from "@/components/setup-cta";
 import { DictationBar, joinDictation, useDictation } from "@/components/dictation";
+import { DictationTextarea } from "@/components/dictation-text";
 import { useFieldCycle } from "@/components/field-cycle";
 import { SidebarToggle } from "@/components/sidebar";
 import { StatsBar } from "@/components/stats-bar";
 import type { TurnUsage } from "@/src/core";
+import { enterSubmits } from "@/src/core";
 
 /**
  * Home — the knowledge graph is the main view, full-bleed edge to edge
@@ -157,7 +159,7 @@ export function Home({
 	};
 
 	return (
-		<div className="relative h-dvh">
+		<div className="relative" style={{ height: "var(--lh-vvh, 100dvh)" }}>
 			{/* Window-drag strip (merged chrome, owner 2026-09-17): a dedicated
 			    mask element, deliberately FIRST in the DOM. Electron's app-region
 			    mask resolves by DOM order — a no-drag element subtracts only drag
@@ -209,7 +211,10 @@ export function Home({
 			    OVER the graph (no gradient: the graph runs clean under it to the
 			    bottom edge). Matches chat.tsx's DOCK geometry (max-w-[46rem]
 			    px-4) so nothing shifts when a session starts (owner). */}
-			<div className="pointer-events-none absolute inset-x-0 bottom-0 pb-5">
+			<div
+				className="pointer-events-none absolute inset-x-0 bottom-0"
+				style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
+			>
 				<div className="pointer-events-auto mx-auto w-full max-w-[46rem] px-4">
 					{/* The pick bar (owner vision, 2026-10-04): the chain
 					    table's selection is PERSISTENT — picked
@@ -248,7 +253,7 @@ export function Home({
 						void start();
 					}}
 				>
-					<textarea
+					<DictationTextarea
 						ref={topicInputRef}
 						value={topic}
 						onChange={(e) => {
@@ -265,7 +270,10 @@ export function Home({
 								dictation.cancel();
 								return;
 							}
-							if (e.key === "Enter" && !e.shiftKey) {
+							// Enter sends on desktop; on a touch-first keyboard it
+							// is a newline (the start button sends). ⌘/Ctrl+Enter
+							// still sends. Shared Enter law.
+							if (enterSubmits(e)) {
 								e.preventDefault();
 								void start();
 							}

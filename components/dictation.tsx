@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { learnerAsk } from "@/lib/dictation-markup";
 import { Loader2Icon, MicIcon } from "lucide-react";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
+import { notifySettingsSaved, useSettingsSaved } from "@/components/settings-signal";
+import { FACTORY_SETTINGS, resolveSettings, type DictationLanguage, type UserSettings } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
 
 /**
@@ -30,7 +33,9 @@ import { Hint } from "@/components/ui/hint";
  *   - interim_results=false, endpointing=300: his live-tuned params — no
  *     partial hypotheses, finals commit ~300ms after a pause (owner
  *     round 1: live words are distracting and shift the meter; the
- *     meter's width is FIXED while recording).
+ *     meter's width is FIXED while recording). Multilingual
+ *     code-switching uses endpointing=100, Deepgram's recommendation
+ *     for language=multi.
  *
  * Owner round 2 (2026-09-17, second live test):
  *   - DEFERRED transcript: finals accumulate in a buffer during the run
@@ -84,17 +89,111 @@ import { Hint } from "@/components/ui/hint";
 /*
  * Deepgram streaming params (the owner's live-tuned dictate config): nova-3,
  * endpointing=300, no interims. Silence streams too (the worklet never
- * pauses), so the socket never idles — no KeepAlive needed.
+ * pauses), so the socket never idles — no KeepAlive needed. The language
+ * comes from settings (general.dictationLanguage, default "en").
+ * language=multi follows Deepgram's Nova-3 code-switching setup:
+ * endpointing=100 plus language_hint for en and fr (hints bias detection;
+ * they do not restrict it).
  */
-const DG_URL =
-	"wss://api.deepgram.com/v1/listen" +
-	"?model=nova-3" +
-	"&encoding=linear16" +
-	"&sample_rate=16000" +
-	"&channels=1" +
-	"&smart_format=true" +
-	"&punctuate=true" +
-	"&endpointing=300";
+/** The resolved dictation language — module-level like the warm token, so
+ *  the click path never waits on a settings read. Re-read at page mount
+ *  and on every general-section save; a failed read keeps the last value. */
+let dictationLanguage: DictationLanguage = FACTORY_SETTINGS.general.dictationLanguage;
+
+function readDictationLanguage(): Promise<DictationLanguage> {
+	return fetch("/api/settings")
+		.then((r) => r.json() as Promise<{ settings?: UserSettings | null }>)
+		.then((body) => resolveSettings(body.settings ?? null).general.dictationLanguage)
+		.catch(() => dictationLanguage);
+}
+
+function refreshDictationLanguage(): void {
+	void readDictationLanguage().then((lang) => {
+		dictationLanguage = lang;
+	});
+}
+
+/** The inline language switcher's options (owner, 2026-10-25): English,
+ *  French, and Multilingual only — the full catalog stays in Settings →
+ *  General. Exported for pins. */
+export const DICTATION_QUICK_LANGUAGES = [
+	{ id: "en", short: "EN", label: "English" },
+	{ id: "fr", short: "FR", label: "Français" },
+	{ id: "multi", short: "Multi", label: "Multilingual (auto-detect)" },
+] as const satisfies readonly { id: DictationLanguage; short: string; label: string }[];
+
+/**
+ * The dictate control's right-hand language switcher (owner, 2026-10-25):
+ * EN / FR / Multi — the three mixed-use languages. Writes through the
+ * same general-section PUT the Settings picker uses, so the running
+ * dictation hook picks it up via the settings-saved signal and the next
+ * take uses it. Disabled while recording (a mid-take flip would apply
+ * nowhere — the socket's language is fixed at open).
+ */
+export function DictationLanguageSwitcher({ disabled }: { disabled?: boolean }) {
+	const [language, setLanguage] = useState<DictationLanguage>(() => dictationLanguage);
+	useEffect(() => {
+		let live = true;
+		void readDictationLanguage().then((lang) => {
+			if (live) setLanguage(lang);
+		});
+		return () => {
+			live = false;
+		};
+	}, []);
+	useSettingsSaved((section) => {
+		if (section !== "general") return;
+		void readDictationLanguage().then(setLanguage);
+	});
+
+	const pick = (next: DictationLanguage) => {
+		if (disabled || next === language) return;
+		const previous = language;
+		setLanguage(next);
+		fetch("/api/settings")
+			.then((r) => r.json() as Promise<{ settings?: UserSettings | null }>)
+			.then((body) => {
+				const general = resolveSettings(body.settings ?? null).general;
+				return fetch("/api/settings/general", {
+					method: "PUT",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ ...general, dictationLanguage: next }),
+				});
+			})
+			.then((res) => {
+				if (res.ok) notifySettingsSaved("general");
+				else throw new Error(`general PUT ${res.status}`);
+			})
+			.catch(() => setLanguage(previous));
+	};
+
+	return (
+		<div
+			className="flex shrink-0 items-center gap-0.5 rounded-md border border-border/50 bg-card/50 p-0.5"
+			role="group"
+			aria-label="Dictation language"
+			data-testid="dictation-language"
+		>
+			{DICTATION_QUICK_LANGUAGES.map((option) => (
+				<button
+					key={option.id}
+					type="button"
+					disabled={disabled}
+					aria-pressed={language === option.id}
+					title={disabled ? `${option.label} (applies to the next take)` : option.label}
+					onClick={() => pick(option.id)}
+					className={`rounded px-1.5 py-0.5 font-ui text-[10px] uppercase transition-colors disabled:cursor-default disabled:opacity-60 ${
+						language === option.id
+							? "bg-accent text-foreground"
+							: "text-muted-foreground/60 hover:text-muted-foreground"
+					}`}
+				>
+					{option.short}
+				</button>
+			))}
+		</div>
+	);
+}
 
 /** Meter tuning — the owner's tested values, see the file header. */
 const METER_FLOOR_DB = -50;
@@ -105,14 +204,15 @@ export const METER_CELLS = 48;
 
 /** The Deepgram key's id in the keys store (the env-var name — the Keys
  *  section's openRow state and the PUT /api/keys/:id seam). */
-export const DEEPGRAM_KEY_ID = "DEEPGRAM_API_KEY";
+export const GLADIA_KEY_ID = "GLADIA_API_KEY";
+export const DEEPGRAM_KEY_ID = GLADIA_KEY_ID;
 
 /** The client-authored KEYLESS line (zero-keys wave, owner 2026-09-25):
  * the token route's raw 503 message is dev-speak ("add it to auth.json
  * (desktop) or .env.local (dev)") — the surface says the short truth
  * instead. Exported for pins; the errored idle button's click recognizes
  * it and deep-links Settings → Keys → the Deepgram row. */
-export const DICTATION_KEYLESS = "Dictation needs a Deepgram key";
+export const DICTATION_KEYLESS = "Dictation needs a Gladia key";
 
 /** Mint a fresh short-lived token (the route holds the real key
  *  server-side). Module-level: the start path's warm cache and the
@@ -122,12 +222,12 @@ export const DICTATION_KEYLESS = "Dictation needs a Deepgram key";
  *  (zero-keys wave, owner 2026-09-25). */
 async function mintFreshToken(): Promise<string> {
 	const res = await fetch("/api/stt/token");
-	const data = (await res.json()) as { token?: string; message?: string };
-	if (!res.ok || !data.token) {
+	const data = (await res.json()) as { url?: string; message?: string };
+	if (!res.ok || !data.url) {
 		if (res.status === 503) throw new Error(DICTATION_KEYLESS);
 		throw new Error(data.message ?? `token route ${res.status}`);
 	}
-	return data.token;
+	return data.url;
 }
 
 /** Warm-token cache (mitigation D, owner 2026-09-27): the click path takes
@@ -235,6 +335,88 @@ export function joinDictation(current: string, final: string): string {
  * unmount guard is identity-based so dev-mode double-invoked effects
  * can't clear another claimant.
  */
+/** The learner-visible ask for the repair pass. Empty when nothing is pending. */
+let dictationAsk = "";
+
+export function useDictationAsk(input: unknown) {
+	const ask = learnerAsk(input);
+	useEffect(() => {
+		dictationAsk = ask;
+		return () => {
+			if (dictationAsk === ask) dictationAsk = "";
+		};
+	}, [ask]);
+}
+
+/** The learner-visible conversation context for the repair pass. Empty when
+ *  nothing is available. Serialized from the last few messages. */
+let dictationContext = "";
+
+function messageText(message: unknown): string {
+	if (!message || typeof message !== "object") return "";
+	const raw = message as { role?: unknown; content?: unknown; parts?: unknown };
+	const role = typeof raw.role === "string" ? raw.role : "message";
+	const source = Array.isArray(raw.parts) ? raw.parts : raw.content;
+	let text = "";
+	if (typeof source === "string") text = source;
+	else if (Array.isArray(source)) {
+		text = source
+			.map((part) => {
+				if (typeof part === "string") return part;
+				if (part && typeof part === "object") {
+					const p = part as { type?: unknown; text?: unknown };
+					if (p.type === "text" && typeof p.text === "string") return p.text;
+					if (typeof p.text === "string") return p.text;
+				}
+				return "";
+			})
+			.join(" ");
+	}
+	text = text.replace(/\\s+/g, " ").trim();
+	if (!text) return "";
+	return `${role}: ${text}`;
+}
+
+function serializeDictationContext(messages: unknown): string {
+	if (!Array.isArray(messages)) return "";
+	return messages
+		.filter((message) => message && typeof message === "object" && (message as { role?: unknown }).role === "user")
+		.slice(-3)
+		.map(messageText)
+		.filter(Boolean)
+		.join("\\n");
+}
+
+export function useDictationContext(messages: unknown) {
+	const context = useMemo(() => serializeDictationContext(messages), [messages]);
+	useEffect(() => {
+		dictationContext = context;
+		return () => {
+			if (dictationContext === context) dictationContext = "";
+		};
+	}, [context]);
+}
+
+const REPAIR_TIMEOUT_MS = 12_000;
+
+/** The repair route. Any failure — unset model, timeout, bad JSON — returns
+ *  the transcript so the field still receives the words. */
+async function repairTranscript(text: string, signal: AbortSignal): Promise<string> {
+	try {
+		const res = await fetch("/api/dictation/post", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ text, ask: dictationAsk, context: dictationContext }),
+			signal,
+		});
+		if (!res.ok) return text;
+		const body = (await res.json()) as { text?: unknown };
+		return typeof body.text === "string" && body.text.trim() ? body.text : text;
+	} catch {
+		return text;
+	}
+}
+
 export function useDictationTarget(append: (text: string) => void, claimed: boolean) {
 	useEffect(() => {
 		if (!claimed) return;
@@ -313,24 +495,39 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 	 *  run and flush into the primary input once, at teardown. */
 	const bufferRef = useRef<string[]>([]);
 	/** Resolvers waiting for the run to fully end (finish(), owner
-	 *  2026-10-01): released by cleanup() — every terminal path runs it. */
+	 *  2026-10-01): released when the repair has landed — every terminal
+	 *  path runs cleanup(), and cleanup waits out the repair. */
 	const waitersRef = useRef<Array<() => void>>([]);
+	/** True once the latest cleanup has finished its repair. finish()
+	 *  reads this so a stale "stopping" render cannot park a waiter. */
+	const settledRef = useRef(true);
+	const repairAbortRef = useRef<AbortController | null>(null);
+	const repairTailRef = useRef(Promise.resolve());
 
 	/** Flush the buffered transcript into the primary input — question claim
-	 *  first, composer fallback. Called exactly once per run, at cleanup; the
-	 *  buffer clears itself so double-cleanup is a no-op. */
-	const flush = useCallback(() => {
-		if (bufferRef.current.length === 0) return;
+	 *  first, composer fallback. The repair runs after the mic is dead.
+	 *  A newer cleanup (cancel) aborts it and the stale result is dropped. */
+	const flush = useCallback((gen: number): Promise<void> => {
+		if (bufferRef.current.length === 0) return Promise.resolve();
 		const text = bufferRef.current.join(" ");
 		bufferRef.current = [];
-		(questionTarget ?? appendRef.current)(text);
+		const ac = new AbortController();
+		repairAbortRef.current = ac;
+		const timer = setTimeout(() => ac.abort(), REPAIR_TIMEOUT_MS);
+		return repairTranscript(text, ac.signal)
+			.then((out) => {
+				if (gen !== genRef.current) return;
+				(questionTarget ?? appendRef.current)(out);
+			})
+			.finally(() => clearTimeout(timer));
 	}, []);
 
 	/** Full teardown of one run's machinery. Idempotent; generation-guarded by callers. */
 	const cleanup = useCallback(() => {
 		genRef.current++;
-		dictationActiveFlag = false;
-		flush(); // the deferred transcript appears when the run ends (owner round 2)
+		const gen = genRef.current;
+		settledRef.current = false;
+		repairAbortRef.current?.abort();
 		if (safetyRef.current) {
 			clearTimeout(safetyRef.current);
 			safetyRef.current = null;
@@ -350,30 +547,28 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 				ws.close();
 			} catch {}
 		}
-		setPhase("idle");
-		// The finish() waiters ride until NOW — post-flush, post-teardown:
-		// a submit path resuming after `await finishDictation()` reads the
-		// target field with the dictated tail already in it.
-		for (const w of waitersRef.current.splice(0)) w();
-		// Pre-mint for the next run (mitigation D) — best-effort; a keyless
-		// page just doesn't warm.
-		warmTokens.refresh();
-	}, []);
+		// The repair lands, then the run is idle. finish() waiters ride until
+		// then so a submit reads the field with the dictated tail in it.
+		// A newer cleanup supersedes this one (cancel drops the repair).
+		const job = flush(gen);
+		repairTailRef.current = repairTailRef.current.then(() => job).then(() => {
+			if (gen !== genRef.current) return;
+			settledRef.current = true;
+			dictationActiveFlag = false;
+			setPhase("idle");
+			for (const w of waitersRef.current.splice(0)) w();
+			warmTokens.refresh();
+		});
+	}, [flush]);
 
 	/** Open the Deepgram socket and wire its messages. `gen` guards staleness. */
 	const openSocket = useCallback(
-		(gen: number, token: string) => {
-			// Minted JWTs authenticate via the "bearer" subprotocol — ["token",
-			// jwt] is rejected at the handshake (verified live; "token" is for
-			// raw API keys only, as in the owner's pi dictate extension).
-			const ws = new WebSocket(DG_URL, ["bearer", token]);
+		(gen: number, url: string) => {
+			const ws = new WebSocket(url);
 			wsRef.current = ws;
 
 			ws.addEventListener("open", () => {
 				if (gen !== genRef.current) return;
-				// Mitigation A: everything captured during the handshake (or a
-				// reconnect gap) goes out now, in order — Deepgram accepts
-				// faster-than-realtime sends.
 				for (const frame of pendingRef.current) ws.send(frame);
 				pendingRef.current = [];
 				setPhase("recording");
@@ -386,38 +581,27 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 				} catch {
 					return;
 				}
-				if (msg.type === "Results") {
-					const text: string | undefined = msg.channel?.alternatives?.[0]?.transcript;
-					// Only finals stream (interim_results=false). DEFERRED (owner
-					// round 2): they buffer here and reach the input once, at
-					// teardown — the meter is the only live feedback.
-					if (msg.is_final && text) bufferRef.current.push(text);
+				if (msg.type === "transcript") {
+					const text: string | undefined = msg.data?.utterance?.text;
+					if (msg.data?.is_final && text) bufferRef.current.push(text);
 				}
 			});
 			ws.addEventListener("close", (ev) => {
 				if (gen !== genRef.current) return;
-				if (ev.code === 1000) {
-					// Our own CloseStream landing: finalize now — the stop path's
-					// safety net stays as the no-close backstop only.
-					cleanup();
-					return;
-				}
-				// Abnormal close mid-run: ONE reconnect with a fresh token (the
-				// research pass: resume is our job, no SDK to lean on).
 				if (reconnectsRef.current < 1) {
 					reconnectsRef.current++;
-					mintFreshToken() // always FRESH — a stale warm token is the likely culprit
-						.then((t) => {
-							if (gen === genRef.current) openSocket(gen, t);
+					mintFreshToken()
+						.then((u) => {
+							if (gen === genRef.current) openSocket(gen, u);
 						})
 						.catch(() => {
 							if (gen === genRef.current) {
-								setError("Deepgram reconnect failed");
+								setError("Gladia reconnect failed");
 								cleanup();
 							}
 						});
 				} else {
-					setError(`Deepgram connection lost (${ev.code})`);
+					setError(`Gladia connection lost (${ev.code})`);
 					cleanup();
 				}
 			});
@@ -497,24 +681,23 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 			return;
 		}
 		if (gen !== genRef.current) return;
-		let token: string;
+		let url: string;
 		try {
-			token = await tokenPromise;
+			url = await tokenPromise;
 		} catch (e) {
 			if (gen !== genRef.current) return;
-			setError(e instanceof Error ? e.message : "token unavailable");
+			setError(e instanceof Error ? e.message : "session unavailable");
 			cleanup();
 			return;
 		}
 		if (gen !== genRef.current) return;
-		// Mitigation B: the handshake fires the moment the graph is live,
-		// overlapping any remaining token wait — mic-gated, never before it.
-		openSocket(gen, token);
+		openSocket(gen, url);
 	}, [openSocket, cleanup]);
 
 	const stop = useCallback(() => {
 		const gen = genRef.current;
 		if (phase !== "recording" && phase !== "connecting") return;
+		settledRef.current = false;
 		setPhase("stopping");
 
 		// Mic dies FIRST — no more audio enqueues (dictate pattern). The
@@ -529,7 +712,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		const ws = wsRef.current;
 		if (ws && ws.readyState === WebSocket.OPEN) {
 			try {
-				ws.send(JSON.stringify({ type: "CloseStream" }));
+				ws.send(JSON.stringify({ type: "stop_recording" }));
 			} catch {
 				cleanup();
 				return;
@@ -555,7 +738,7 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 
 	const finish = useCallback((): Promise<void> => {
 		return new Promise((resolve) => {
-			if (phase === "idle") {
+			if (phase === "idle" || (phase === "stopping" && settledRef.current)) {
 				resolve();
 				return;
 			}
@@ -586,7 +769,11 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 	// attached.
 	useEffect(() => {
 		warmTokens.refresh(); // pre-mint at mount (mitigation D) — silent if keyless
+		refreshDictationLanguage();
 	}, []);
+	useSettingsSaved((section) => {
+		if (section === "general") refreshDictationLanguage();
+	});
 	useEffect(() => {
 		window.addEventListener("lh:kbd-toggle-dictation", toggle);
 		return () => window.removeEventListener("lh:kbd-toggle-dictation", toggle);
@@ -673,35 +860,43 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 
 	if (!active) {
 		return (
-			<Hint
-				// Errored: the button span truncates the line — the tooltip is its
-				// full reveal (the keyless line KEEPS "Deepgram" — owner overrule:
-				// it's the Keys row label, the truth the user needs). Otherwise the
-				// quiet label + the live ⌘D binding.
-				label={error ?? "Dictate"}
-				action={error ? undefined : "toggle-dictation"}
-				side="top"
-			>
-				<button
-					type="button"
-					onClick={() => {
-						if (keyless) {
-							clearError();
-							openSettings("keys", DEEPGRAM_KEY_ID);
-						} else {
-							toggle();
-						}
-					}}
-					aria-label={error ? `Dictation failed: ${error}` : "Start dictation"}
-					data-testid="dictation-toggle"
-				// Same blurring as the floating chrome (owner, fix wave round 3),
-			// but lower opacity — the mic stays quieter than the model pills.
-			className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-border/50 bg-card/50 text-xs text-muted-foreground/70 shadow-lg backdrop-blur transition-colors hover:border-border hover:text-muted-foreground"
-			>
-					<MicIcon className="size-3.5" />
-					<span className="max-w-full truncate">{error ?? "Dictate"}</span>
-				</button>
-			</Hint>
+			<div className="flex w-full items-center gap-1.5">
+				<Hint
+					// Errored: the button span truncates the line — the tooltip is its
+					// full reveal (the keyless line KEEPS "Deepgram" — owner overrule:
+					// it's the Keys row label, the truth the user needs). Otherwise the
+					// quiet label + the live ⌘D binding.
+					label={error ?? "Dictate"}
+					action={error ? undefined : "toggle-dictation"}
+					side="top"
+				>
+					<button
+						type="button"
+						onClick={() => {
+							if (keyless) {
+								clearError();
+								openSettings("keys", DEEPGRAM_KEY_ID);
+							} else {
+								toggle();
+							}
+						}}
+						aria-label={error ? `Dictation failed: ${error}` : "Start dictation"}
+						data-testid="dictation-toggle"
+					// Same blurring as the floating chrome (owner, fix wave round 3),
+				// but lower opacity — the mic stays quieter than the model pills.
+				className="flex h-7 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md border border-border/50 bg-card/50 text-xs text-muted-foreground/70 shadow-lg backdrop-blur transition-colors hover:border-border hover:text-muted-foreground"
+				>
+						<MicIcon className="size-3.5" />
+						<span className="max-w-full truncate">{error ?? "Dictate"}</span>
+					</button>
+				</Hint>
+				{/* The mobile stats row is narrow: the mic must keep the room.
+				    The language quick-switch is a secondary control (the same
+				    setting lives in Settings → General). */}
+				<span className="hidden sm:inline-flex">
+					<DictationLanguageSwitcher />
+				</span>
+			</div>
 		);
 	}
 
@@ -742,6 +937,9 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 					/>
 				))}
 			</div>
+			<span className="hidden sm:inline-flex">
+				<DictationLanguageSwitcher disabled />
+			</span>
 		</div>
 	);
 }

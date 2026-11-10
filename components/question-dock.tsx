@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
+import { DictationTextarea } from "@/components/dictation-text";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,7 @@ import {
 	type QuizToolInput,
 	type SelectMode,
 	type Phase3,
+	enterSubmits,
 } from "@/src/core";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
 
@@ -831,7 +833,7 @@ function QuestionDockForm({
 						{qd.mode === "text" ? "Your answer" : "YOUR THINKING"}
 					</div>
 					{qd.mode === "text" ? (
-						<textarea
+						<DictationTextarea
 							value={text}
 							onChange={(e) => {
 								answerTextRef.current = e.target.value;
@@ -849,7 +851,8 @@ function QuestionDockForm({
 								}
 								// Chat convention: Enter submits, Shift+Enter is a newline;
 								// ⌘/Ctrl+Enter also submits (universal across the app).
-								if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
+								// Touch-first: Enter is a newline too (send = the button).
+								if (enterSubmits(e)) {
 									e.preventDefault();
 									submit();
 								}
@@ -859,7 +862,7 @@ function QuestionDockForm({
 							className="field-sizing-content lh-input max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 						/>
 					) : (
-						<textarea
+						<DictationTextarea
 							ref={thinkingRef}
 							value={thinking}
 							onChange={(e) => {
@@ -879,7 +882,8 @@ function QuestionDockForm({
 								// THE STANDARD CHORD (owner round 5, 2026-10-05): Enter
 								// submits, Shift+Enter is a newline, ⌘/Ctrl+Enter works
 								// too — identical to the practice dock and the composer.
-								if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+								// Touch-first: Enter is a newline too (send = the button).
+								if (enterSubmits(e)) {
 									e.preventDefault();
 									submit();
 								}

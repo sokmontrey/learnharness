@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Source_Sans_3 } from "next/font/google";
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -16,6 +16,16 @@ const prose = Source_Sans_3({ subsets: ["latin"], variable: "--font-sans3" });
 export const metadata: Metadata = {
 	title: "Learning Harness",
 	description: "A teacher agent with a memory — sessions, quizzes, and a knowledge graph of what you know.",
+};
+
+// Mobile viewport (mobile pass): keep the layout width at the device width
+// (Next's default) and let Android's soft keyboard resize the content
+// instead of overlaying the composer. iOS is handled by the visualViewport
+// seam in components/sidebar.tsx (--lh-vvh).
+export const viewport: Viewport = {
+	width: "device-width",
+	initialScale: 1,
+	interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

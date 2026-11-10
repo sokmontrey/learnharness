@@ -15,6 +15,7 @@ import { parseHTML } from "linkedom";
 import { describe, it } from "node:test";
 import { buttonKeepsNativeEnter } from "../components/enter-submits.ts";
 import { blurAfterPointerClick } from "../components/focus-hygiene.ts";
+import { enterSubmits } from "../src/core/keyboard.ts";
 
 const { document } = parseHTML("<html><body></body></html>");
 
@@ -56,6 +57,40 @@ describe("buttonKeepsNativeEnter (the pointer/keyboard Enter split)", () => {
 		const b = buttonIn({});
 		assert.doesNotThrow(() => buttonKeepsNativeEnter(b));
 		assert.equal(buttonKeepsNativeEnter(b), false);
+	});
+});
+
+describe("enterSubmits — the multi-line Enter law", () => {
+	const key = (
+		overrides: Partial<Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">> = {},
+	): Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey"> => ({
+		key: "Enter",
+		shiftKey: false,
+		metaKey: false,
+		ctrlKey: false,
+		altKey: false,
+		...overrides,
+	});
+
+	it("desktop: plain Enter submits, Shift+Enter is a newline, ⌘/Ctrl+Enter submits", () => {
+		assert.equal(enterSubmits(key(), false), true);
+		assert.equal(enterSubmits(key({ shiftKey: true }), false), false);
+		assert.equal(enterSubmits(key({ metaKey: true }), false), true);
+		assert.equal(enterSubmits(key({ ctrlKey: true }), false), true);
+	});
+
+	it("touch-first: plain Enter does NOT submit — the send button owns it", () => {
+		assert.equal(enterSubmits(key(), true), false);
+		assert.equal(enterSubmits(key({ shiftKey: true }), true), false);
+		// Hardware keyboards on a phone/tablet keep the universal chord.
+		assert.equal(enterSubmits(key({ metaKey: true }), true), true);
+		assert.equal(enterSubmits(key({ ctrlKey: true }), true), true);
+	});
+
+	it("only Enter, and never Alt+Enter", () => {
+		assert.equal(enterSubmits(key({ key: "a" }), false), false);
+		assert.equal(enterSubmits(key({ altKey: true }), false), false);
+		assert.equal(enterSubmits(key({ altKey: true }), true), false);
 	});
 });
 

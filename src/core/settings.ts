@@ -69,6 +69,11 @@ export interface RoleModelOverride {
 export const MODEL_SLOTS = ["strong", "cheap", "vision"] as const;
 export type ModelSlotName = (typeof MODEL_SLOTS)[number];
 
+/** Optional dictation-repair model. Stored with the slots, absent from the
+ *  first-run gate (`slotsConfigured` still requires only the three tiers). */
+export const DICTATION_MODEL_SLOT = "fast" as const;
+export const STORED_MODEL_SLOTS = [...MODEL_SLOTS, DICTATION_MODEL_SLOT] as const;
+
 /** The DEFAULT thinking level for UNSET levels only (owner, 2026-09-22):
  *  a slot/override/chat that names a model but no thinking level resolves
  *  to the FIRST entry in this order that the model supports
@@ -203,6 +208,8 @@ export interface ModelsSettings {
 	strong?: ModelSlot;
 	cheap?: ModelSlot;
 	vision?: ModelSlot;
+	/** Repairs a finished dictation. Unset: the transcript is inserted raw. */
+	fast?: ModelSlot;
 }
 
 /** First-run gate (model-slots wave, owner 2026-09-20): the app refuses
@@ -233,6 +240,32 @@ export const ROLE_SLOT: Readonly<Record<ModelRole, ModelSlotName>> = {
 export interface GeneralSettings {
 	/** Auto-update the app (default ON). Mechanism ships in a later wave. */
 	autoUpdate?: boolean;
+	/** Deepgram's `language` param for dictation (default "en" — the
+	 *  pre-setting behavior: nova-3 with no language param is English).
+	 *  "multi" is nova-3's multilingual code-switching mode. */
+	dictationLanguage?: DictationLanguage;
+}
+
+/** The dictation languages offered — nova-3's multilingual set (each also
+ *  streams monolingually), in picker order with their display labels. */
+export const DICTATION_LANGUAGES = [
+	{ id: "en", label: "English" },
+	{ id: "multi", label: "Multilingual (auto-detect)" },
+	{ id: "es", label: "Español" },
+	{ id: "fr", label: "Français" },
+	{ id: "de", label: "Deutsch" },
+	{ id: "pt", label: "Português" },
+	{ id: "it", label: "Italiano" },
+	{ id: "nl", label: "Nederlands" },
+	{ id: "ja", label: "日本語" },
+	{ id: "hi", label: "हिन्दी" },
+	{ id: "ru", label: "Русский" },
+] as const;
+
+export type DictationLanguage = (typeof DICTATION_LANGUAGES)[number]["id"];
+
+export function isDictationLanguage(value: unknown): value is DictationLanguage {
+	return DICTATION_LANGUAGES.some((lang) => lang.id === value);
 }
 
 /** Agent settings — everything about the non-conversation machinery. */
@@ -396,7 +429,7 @@ export interface FactorySettings {
 
 export const FACTORY_SETTINGS: FactorySettings = {
 	version: CURRENT_SETTINGS_VERSION,
-	general: { autoUpdate: true },
+	general: { autoUpdate: true, dictationLanguage: "en" },
 	appearance: {
 		mode: "dark",
 		background: null, // the dark default (#141414) lives in the mode's derivation curve
@@ -441,6 +474,7 @@ function sanitizeGeneral(raw: Record<string, unknown>): GeneralSettings {
 	const out: GeneralSettings = {};
 	const autoUpdate = boolOrDrop(raw.autoUpdate);
 	if (autoUpdate !== undefined) out.autoUpdate = autoUpdate;
+	if (isDictationLanguage(raw.dictationLanguage)) out.dictationLanguage = raw.dictationLanguage;
 	return out;
 }
 
@@ -481,7 +515,7 @@ function sanitizeRoleOverride(raw: unknown): RoleModelOverride | undefined {
  *  stale client can't park junk in a slot. */
 function sanitizeModels(raw: Record<string, unknown>): ModelsSettings {
 	const out: ModelsSettings = {};
-	for (const slot of MODEL_SLOTS) {
+	for (const slot of STORED_MODEL_SLOTS) {
 		const cleaned = sanitizeRoleOverride(raw[slot]);
 		if (cleaned) out[slot] = cleaned;
 	}
