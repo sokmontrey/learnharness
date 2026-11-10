@@ -31,11 +31,19 @@ export interface ExplainRefusal {
 
 /** `targetMessageId` anchors the last-two-turns window (src/core/
  *  explain-context.ts); `pointer` is the selected span verbatim, or the
- *  learner's typed question when there was no selection. */
-export async function explainPart(chatId: string, targetMessageId: string, pointer: string): Promise<ExplainOutcome | ExplainRefusal> {
+ *  learner's typed question when there was no selection. `question` is an
+ *  extra specific ask about that pointer; `previousAnswer` turns the call
+ *  into a refinement of the explanation already on screen. */
+export async function explainPart(
+	chatId: string,
+	targetMessageId: string,
+	pointer: string,
+	question = "",
+	previousAnswer = "",
+): Promise<ExplainOutcome | ExplainRefusal> {
 	const record = stores.chatStore.getChat(chatId);
 	if (!record) return { ok: false, status: 404, body: { error: "Unknown chat" } };
-	if (!pointer.trim()) return { ok: false, status: 400, body: { error: "Nothing to explain" } };
+	if (!pointer.trim() && !question.trim()) return { ok: false, status: 400, body: { error: "Nothing to explain" } };
 
 	const spec = resolveRoleSpec("explainer", stores.settingsStore.readSettings());
 	if (!spec) return { ok: false, status: 503, body: modelsNotConfigured(["cheap"]) };
@@ -46,7 +54,7 @@ export async function explainPart(chatId: string, targetMessageId: string, point
 	const contextProse = explainContextProse(slice);
 
 	try {
-		const text = await runExplainer(contextProse, pointer, { engine, chatId });
+		const text = await runExplainer(contextProse, pointer, { engine, chatId, question, previousAnswer });
 		return { ok: true, text };
 	} catch (err) {
 		return { ok: false, status: 502, body: { error: err instanceof Error ? err.message : "Explain failed" } };

@@ -26,8 +26,10 @@ import { usePopoverDismiss } from "@/components/popover-dismiss";
 export interface ExplainRequest {
 	/** Anchors the last-two-turns context window (src/core/explain-context.ts). */
 	targetMessageId: string;
-	/** The selected span verbatim — present and non-empty fires immediately
-	 *  ("pointer" mode). Absent/empty opens the free-text ask form instead. */
+	/** The selected span verbatim — when present the panel opens with the
+	 *  selection shown plus an optional "specific question" box. Absent/empty
+	 *  opens the plain free-text ask form. Neither runs until the learner
+	 *  submits; explanations never fire from a click alone. */
 	pointer?: string;
 	/** Viewport y to open level with (the selection rect's top, or the
 	 *  triggering button's rect top). */
@@ -68,6 +70,7 @@ export function ExplainProvider({
 }) {
 	const [req, setReq] = useState<ExplainRequest | null>(null);
 	const [question, setQuestion] = useState("");
+	const [followUp, setFollowUp] = useState("");
 	const [status, setStatus] = useState<Status>("idle");
 	const [text, setText] = useState("");
 	const [usedPointer, setUsedPointer] = useState("");
@@ -83,13 +86,14 @@ export function ExplainProvider({
 		setText("");
 		setError(null);
 		setQuestion("");
+		setFollowUp("");
 		setInserted(false);
 	}, []);
 
 	usePopoverDismiss(rootRef, req !== null, close);
 
 	const run = useCallback(
-		async (targetMessageId: string, pointer: string) => {
+		async (targetMessageId: string, pointer: string, extraQuestion = "", previousAnswer = "") => {
 			const id = ++runId.current;
 			setStatus("loading");
 			setError(null);
@@ -99,7 +103,7 @@ export function ExplainProvider({
 				const res = await fetch(`/api/chats/${chatId}/explain-part`, {
 					method: "POST",
 					headers: { "content-type": "application/json" },
-					body: JSON.stringify({ targetMessageId, pointer }),
+					body: JSON.stringify({ targetMessageId, pointer, question: extraQuestion, previousAnswer }),
 				});
 				const body = (await res.json().catch(() => null)) as { text?: string; error?: string } | null;
 				if (id !== runId.current) return; // a newer request superseded this one
@@ -141,11 +145,10 @@ export function ExplainProvider({
 			setText("");
 			setError(null);
 			setQuestion("");
+			setFollowUp("");
 			setInserted(false);
-			const pointer = next.pointer?.trim();
-			if (pointer) run(next.targetMessageId, pointer);
 		},
-		[run],
+		[],
 	);
 
 	useEffect(() => {
@@ -197,17 +200,28 @@ export function ExplainProvider({
 						</button>
 					</div>
 					<div className="min-h-0 flex-1 overflow-y-auto p-3 text-sm">
-						{!req.pointer?.trim() && status === "idle" && (
+						{status === "idle" && (
 							<form
 								data-testid="explain-ask-form"
 								onSubmit={(e) => {
 									e.preventDefault();
-									if (question.trim()) run(req.targetMessageId, question.trim());
+									const selection = req.pointer?.trim() ?? "";
+									const ask = question.trim();
+									if (!selection && !ask) return;
+									setQuestion("");
+									if (selection) run(req.targetMessageId, selection, ask);
+									else run(req.targetMessageId, ask);
 								}}
 								className="flex flex-col gap-2"
 							>
+								{req.pointer?.trim() && (
+									<div className="rounded border border-border bg-muted/40 px-2 py-1.5">
+										<div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Selected text</div>
+										<div className="mt-0.5 max-h-24 overflow-y-auto text-xs italic text-muted-foreground">&ldquo;{req.pointer}&rdquo;</div>
+									</div>
+								)}
 								<label className="text-xs text-muted-foreground" htmlFor="explain-ask-input">
-									What part should I explain?
+									{req.pointer?.trim() ? "Add a specific question (optional)" : "What part should I explain?"}
 								</label>
 								<textarea
 									id="explain-ask-input"
@@ -216,21 +230,57 @@ export function ExplainProvider({
 									value={question}
 									onChange={(e) => setQuestion(e.target.value)}
 									className="w-full resize-none rounded border border-border bg-background p-2 text-sm outline-none focus:border-foreground/40"
-									placeholder="e.g. why does the sign flip in that step?"
+									placeholder={
+										req.pointer?.trim()
+											? "e.g. why is the agreement audible here?"
+											: "e.g. why does the sign flip in that step?"
+									}
 								/>
 								<button
 									type="submit"
-									disabled={!question.trim()}
+									disabled={!req.pointer?.trim() && !question.trim()}
 									className="self-end rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
 								>
-									Ask
+									{req.pointer?.trim() ? "Explain" : "Ask"}
 								</button>
 							</form>
 						)}
 						{status === "loading" && <div className="text-muted-foreground">Thinking…</div>}
 						{status === "error" && <div className="text-destructive">{error}</div>}
-						{status === "done" && (
+						{(status === "done" || (status === "error" && text.trim())) && (
 							<MessageResponse className="lh-prose text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{text}</MessageResponse>
+						)}
+						{status === "done" && (
+							<form
+								data-testid="explain-followup-form"
+								onSubmit={(e) => {
+									e.preventDefault();
+									const ask = followUp.trim();
+									if (!ask) return;
+									setFollowUp("");
+									run(req.targetMessageId, usedPointer, ask, text);
+								}}
+								className="mt-3 flex flex-col gap-2 border-t border-border pt-3"
+							>
+								<label className="text-xs text-muted-foreground" htmlFor="explain-followup-input">
+									Ask a follow-up about this explanation
+								</label>
+								<textarea
+									id="explain-followup-input"
+									rows={2}
+									value={followUp}
+									onChange={(e) => setFollowUp(e.target.value)}
+									className="w-full resize-none rounded border border-border bg-background p-2 text-sm outline-none focus:border-foreground/40"
+									placeholder="e.g. can you show that with one more example?"
+								/>
+								<button
+									type="submit"
+									disabled={!followUp.trim()}
+									className="self-end rounded border border-border px-3 py-1 text-xs font-medium hover:bg-accent disabled:opacity-50"
+								>
+									Ask follow-up
+								</button>
+							</form>
 						)}
 					</div>
 					{status === "done" && (

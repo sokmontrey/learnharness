@@ -22,6 +22,10 @@ You are not the teacher — you don't plan, you don't quiz, you don't continue t
 exactly the thing that was pointed at, using the surrounding context only to understand what it means,
 never wandering into adjacent material that wasn't asked about.
 
+If the learner adds a **specific question**, that question narrows the ask: answer it, not merely the
+whole span. If a **previous explanation** is included, refine or correct it in response to the
+follow-up — don't repeat what it already said.
+
 ## Shape — short, and diagram first
 
 - **Always shorter than the teaching message it unpacks.** A quick pointer gets a quick answer. Default
@@ -56,13 +60,25 @@ export interface ExplainRunOptions {
 	onUsage?: (usage: Usage) => void;
 	/** Debug: raw provider-event recording key (LH_PROVIDER_EVENTS=1). */
 	chatId?: string;
+	/** The learner's specific question about the pointer, when they added one. */
+	question?: string;
+	/** The explanation this call follows up on (refinement pass). */
+	previousAnswer?: string;
 }
 
 /** `contextProse` is the last-two-turns transcript (explainContextProse);
  *  `pointer` is the selected span verbatim, or the learner's free-text
- *  question when there was no selection — the caller labels which. */
+ *  question when there was no selection — the caller labels which.
+ *  `opts.question` narrows the ask further; `opts.previousAnswer` makes this
+ *  a refinement of an answer already shown in the panel. */
 export async function runExplainer(contextProse: string, pointer: string, opts: ExplainRunOptions = {}): Promise<string> {
-	const prompt = `## Lesson context (last two turns)\n\n${contextProse || "(none — this is very early in the session)"}\n\n## What to explain\n\n${pointer}`;
+	let prompt = `## Lesson context (last two turns)\n\n${contextProse || "(none — this is very early in the session)"}\n\n## What to explain\n\n${pointer}`;
+	if (opts.previousAnswer?.trim()) {
+		prompt += `\n\n## Your previous explanation\n\n${opts.previousAnswer.trim()}`;
+	}
+	if (opts.question?.trim()) {
+		prompt += `\n\n## Learner's specific question\n\n${opts.question.trim()}`;
+	}
 	const { text } = await runSubagent([], {
 		role: "explainer",
 		prompt,
