@@ -442,6 +442,17 @@ function projectMarker(marker: LhMarkerMessage, out: LhViewMessage[]): void {
 			});
 			return;
 		}
+		case "explain-note": {
+			// The learner's kept "explain this" result (annotation wave, owner
+			// 2026-11): its own card, bordered in the transcript — not spliced
+			// into another message, it's a standalone archived answer.
+			out.push({
+				id: marker.id,
+				role: "user",
+				parts: [{ type: "data-explain-note", id: `en_${marker.id}`, data: marker.details }],
+			});
+			return;
+		}
 		case "plan-block": {
 			// No message of its own: splice into the preceding assistant
 			// group, IN FLOW after the last successful plan_init call.

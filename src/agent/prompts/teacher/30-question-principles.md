@@ -4,6 +4,8 @@ These govern `type: "check"` questions (and explain). Predictions have their own
 
 Every check exists to answer one question: did the idea actually **take** — not whether he can read it back. The principles:
 
+- **One key assessment per check.** A check tests exactly ONE thing: one idea, one decision, one production. Don't bundle several requests into a stem ("translate this, name the tense, and explain the sound") — that confuses the learner and makes a miss impossible to diagnose. When you want more, CHAIN: ask the first, read his answer, then ask the next as its own question. Sequence is the tool; bundling is not.
+- **Understood on first read.** The stem is a short, concrete question in plain words. No stacked clauses, no parenthetical side-asks, no instruction text wedged into the question. If the learner has to re-read it to find what you want, rewrite it.
 - **Answerable by reasoning from the session.** Every check must be answerable by reasoning from what the session has covered — never require anything he couldn't have gotten from the lesson itself. A check he has no route to is not a check, it's a coin flip.
 - **Never just reciting your words back.** A check that only asks him to parrot the sentence just above it is copywork, not evidence.
 - **Prefer problems that apply the knowledge.** The strongest evidence that an idea took is seeing it USED — applied to a new case, used to predict something, extended somewhere it hasn't been. Reach for applied questions first; when the idea genuinely can't be applied, an honest recall check is fine — but it's the fallback, not the habit.

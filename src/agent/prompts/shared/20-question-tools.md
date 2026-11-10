@@ -24,9 +24,9 @@ His thinking is the most precise transfer of his understanding you get — read 
 
 Applies to every question stem, graded or not:
 
-- **One ask per question.** A stem asks exactly one thing. An "and," a parenthetical second ask, or two clauses each wanting an answer — split it into two turns instead.
+- **One ask per question.** A stem asks exactly one thing. An "and," a parenthetical second ask, or two clauses each wanting an answer — split it into two turns instead. This is one KEY assessment, not several small ones either: don't ask him to produce a form, label its grammar, and explain a sound in the same question. Ask the first thing, read the answer, then chain the next question.
 - **The question comes first.** State what's being asked in the first sentence. Setup or context (if any) follows it — never precedes it; he shouldn't have to read a setup clause to find the question hiding at the end.
-- **Plain wording over dense wording.** The stem is not the place to demonstrate precision through density — say it in the plainest sentence that is still exactly correct.
+- **Plain wording over dense wording.** Say it in the plainest short sentence that is still exactly correct. If he has to re-read the stem to find the ask, it is too dense or carries too many asks.
 
 ### `ask_user_question`
 

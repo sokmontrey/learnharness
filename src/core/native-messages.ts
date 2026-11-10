@@ -74,8 +74,9 @@ export interface LhMarkerMessage {
 		| "practice-thinking"
 		| "practice-next"
 		| "problem-dismissed"
-		| "compaction";
-	/** The model-facing text ("" for plan blocks — UI-only). */
+		| "compaction"
+		| "explain-note";
+	/** The model-facing text ("" for plan blocks and explain notes — UI-only). */
 	content: string;
 	display: boolean;
 	/** The UI payload — per-customType, never model-visible. */
@@ -180,6 +181,31 @@ export function newPlanBlockMessage(
 		content: "",
 		display: true,
 		details: { planCallId, block },
+		timestamp: Date.now(),
+	};
+}
+
+/** An inserted "explain this" result (annotation wave, owner 2026-11):
+ *  pure UI history, same no-model-face shape as plan-block — the learner
+ *  chose to keep this explanation visible in the transcript after the
+ *  margin popover closed; it never re-enters the model's context. */
+export interface ExplainNoteDetails {
+	/** The id of the teaching message the explanation was anchored to. */
+	targetMessageId: string;
+	/** The selected span, or the learner's typed question. */
+	pointer: string;
+	/** The explain sub-agent's answer (markdown/LaTeX/mermaid intact). */
+	text: string;
+}
+
+export function newExplainNoteMessage(details: ExplainNoteDetails): LhMarkerMessage {
+	return {
+		id: newMessageId(),
+		role: "custom",
+		customType: "explain-note",
+		content: "",
+		display: true,
+		details,
 		timestamp: Date.now(),
 	};
 }
@@ -554,7 +580,12 @@ export function toLlmMessages(messages: readonly AgentMessage[]): Message[] {
 			const marker = m as LhMarkerMessage;
 			// UI-only markers: plan blocks, and problem dismissals (the
 			// synthesized conclude pair carries the model's face).
-			if (marker.customType === "plan-block" || marker.customType === "problem-dismissed") continue;
+			// explain-note (annotation wave, owner 2026-11): an inserted "explain
+			// this" result — UI-ONLY by design, same as plan-block. It's a
+			// learner-facing archive of something already explained, not new
+			// input for the teacher to react to; keeping it out of the model's
+			// context means inserting it never nudges or derails the lesson.
+			if (marker.customType === "plan-block" || marker.customType === "problem-dismissed" || marker.customType === "explain-note") continue;
 			// The ACTIVE compaction marker already rendered as the head —
 			// never twice. (Stale markers before the cut are unreachable; a
 			// marker whose cut could not resolve has no head and renders as

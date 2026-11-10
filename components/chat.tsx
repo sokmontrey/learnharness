@@ -53,13 +53,14 @@ import { ArrowRightIcon, DumbbellIcon, SparklesIcon, WaypointsIcon } from "lucid
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
-import { TtsSelectionButton } from "@/components/tts-selection-button";
+import { SelectionToolbar } from "@/components/selection-toolbar";
 import { ExplainProvider, useExplain } from "@/components/explain-panel";
-import { ExplainSelectionButton } from "@/components/explain-selection-button";
 import { SessionMessageNavigation } from "@/components/session-navigation";
 import { PracticeDock } from "@/components/practice-dock";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
 import { GraphContextCard, type GraphContextData } from "@/components/graph-context-card";
+import { ExplainNoteCard } from "@/components/explain-note-card";
+import type { ExplainNoteDetails } from "@/src/core";
 import { TopBar } from "@/components/top-bar";
 import type { ArtifactPartProps, JobRecord, Phase3, QuestionAnswerData, TurnUsage, SessionPricing } from "@/src/core";
 import type { LhViewMessage } from "@/src/core";
@@ -184,28 +185,53 @@ function SystemLine({ children, testId }: { children: React.ReactNode; testId?: 
 	);
 }
 
-/** The persistent per-message "explain" affordance (annotation wave, owner
- *  2026-11): a quiet corner button (CopyCorner's hover-reveal idiom), one
- *  per assistant message — opens the margin panel's free-text ask form
- *  (ExplainProvider.open with no `pointer`). A CHILD component on purpose:
- *  it reads useExplain(), and Chat() itself renders ABOVE where
- *  ExplainProvider mounts (it's Chat's own return value), so Chat can't
- *  call that hook directly — only a descendant can. Absent/empty message
- *  ids (legacy transcripts) render nothing: the explainer's context
- *  window anchors on the real id, and there's nothing honest to anchor to. */
-function ExplainAskButton({ messageId }: { messageId: string }) {
+/** The per-message "explain" affordance (annotation wave, owner 2026-11):
+ *  a quiet corner button (CopyCorner's hover-reveal idiom), one per
+ *  assistant message — opens the margin panel's free-text ask form
+ *  (ExplainProvider.open with no `pointer`). The NEWEST assistant message
+ *  keeps it always visible (owner report: "i don't see the one main button
+ *  for explain the last response") — older messages reveal it on hover, so
+ *  the transcript stays quiet while the next action is discoverable. A
+ *  CHILD component on purpose: it reads useExplain(), and Chat() itself
+ *  renders ABOVE where ExplainProvider mounts (it's Chat's own return
+ *  value), so Chat can't call that hook directly — only a descendant can.
+ *  Absent/empty message ids (legacy transcripts) render nothing: the
+ *  explainer's context window anchors on the real id, and there's nothing
+ *  honest to anchor to. */
+function ExplainAskButton({ messageId, prominent = false }: { messageId: string; prominent?: boolean }) {
 	const { open } = useExplain();
 	if (!messageId) return null;
+	const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+		const rect = e.currentTarget.getBoundingClientRect();
+		open({ targetMessageId: messageId, anchorY: rect.top });
+	};
+	if (prominent) {
+		// In flow above the reply (not an overlay): the main affordance is
+		// always visible without ever covering the text it explains.
+		return (
+			<div className="flex justify-end">
+				<button
+					type="button"
+					aria-label="Ask about this message"
+					title="Explain this response"
+					data-testid="explain-ask-button"
+					onClick={handleClick}
+					className="flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md border border-border bg-background/90 px-2 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent hover:text-foreground"
+				>
+					<SparklesIcon className="size-3.5" />
+					<span>Explain</span>
+				</button>
+			</div>
+		);
+	}
 	return (
 		<button
 			type="button"
 			aria-label="Ask about this message"
+			title="Explain this response"
 			data-testid="explain-ask-button"
 			className="absolute top-0 right-0 z-10 flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/explain-msg:opacity-100"
-			onClick={(e) => {
-				const rect = e.currentTarget.getBoundingClientRect();
-				open({ targetMessageId: messageId, anchorY: rect.top });
-			}}
+			onClick={handleClick}
 		>
 			<SparklesIcon className="size-3.5" />
 		</button>
@@ -274,6 +300,12 @@ export function Chat({
 	const columnRef = useRef<HTMLDivElement | null>(null);
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
+	// The one always-visible Explain affordance rides the newest assistant
+	// reply (owner report: the hover-only corner button was undiscoverable).
+	const lastAssistantId = useMemo(
+		() => [...messages].reverse().find((m) => m.role === "assistant" && m.id)?.id ?? null,
+		[messages],
+	);
 
 	// The reattach settled terminal → the sync-and-continue seam (below).
 	setReattachSettled(() => reattachSettledRef.current());
@@ -1354,8 +1386,7 @@ export function Chat({
 
 				<SessionFind scopeRef={sessionFindScopeRef} scrollContextRef={scrollContextRef} />
 				<div ref={sessionFindScopeRef} className="relative flex min-h-0 flex-1">
-				<TtsSelectionButton scopeRef={sessionFindScopeRef} />
-				<ExplainSelectionButton scopeRef={sessionFindScopeRef} />
+				<SelectionToolbar scopeRef={sessionFindScopeRef} />
 				<Conversation className="h-full min-w-0 flex-1" initial="instant" contextRef={scrollContextRef}>
 					<SessionMessageNavigation />
 					<ConversationContent className="min-h-full gap-0 p-0">
@@ -1398,6 +1429,8 @@ export function Chat({
 										switch (part.type) {
 											case "data-graph-context":
 												return <GraphContextCard key={pi} data={part.data as GraphContextData} />;
+											case "data-explain-note":
+												return <ExplainNoteCard key={pi} data={part.data as ExplainNoteDetails} />;
 											case "data-compaction":
 												return <CompactionMomentDivider key={pi} data={part.data as CompactionDividerData} />;
 											case "data-compaction-cut":
@@ -1480,7 +1513,7 @@ export function Chat({
 											</div>
 									) : (
 									<Message from="assistant" className="group/explain-msg relative max-w-full">
-									<ExplainAskButton messageId={m.id ?? ""} />
+									<ExplainAskButton messageId={m.id ?? ""} prominent={m.id === lastAssistantId} />
 									<MessageContent className="w-full">
 											{m.parts.map((part, pi) => {
 												const isLastPart = mi === messages.length - 1 && pi === m.parts.length - 1;

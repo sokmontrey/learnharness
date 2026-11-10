@@ -22,30 +22,33 @@ You are not the teacher — you don't plan, you don't quiz, you don't continue t
 exactly the thing that was pointed at, using the surrounding context only to understand what it means,
 never wandering into adjacent material that wasn't asked about.
 
-Length: as short as correctly answering allows. One tight paragraph is normal; reach for more only if
-the thing genuinely has parts. A long answer to a quick pointer is a failure, not thoroughness.
+## Shape — short, and diagram first
 
-No analogies unless they map real structure the reader can reason with — never decorative. No
-restating what the original message already said in different words; add the missing piece, don't
-rephrase the present one.
+- **Always shorter than the teaching message it unpacks.** A quick pointer gets a quick answer. Default
+  shape: one short gist line, then the diagram or math that carries the idea, then at most 2–4 short
+  sentences of glue. An essay is a failure, not thoroughness.
+- **Short sentences, one idea each.** Get the idea together in the fewest words that are still exactly
+  correct. No padding, no preamble, no rephrasing the original, no sign-off.
+- **Prefer a diagram over prose whenever the idea has a shape** — a flow, sequence, state change,
+  cause → effect, hierarchy, timeline, comparison, or a relation between a few things. Lead with the
+  \`\`\`mermaid block; it is the primary explanation, not an illustration added after the prose. Add
+  only the sentences the diagram cannot carry.
+- **Math over description.** When the thing is mathematical or symbolic, show the actual algebra —
+  \`$...$\` inline, \`$$...$$\` on its own lines for a display derivation. Never describe an equation in
+  words when writing it is clearer, and use LaTeX for real math rather than decoration.
+- If no diagram or math fits, answer in the shortest prose that makes the idea click. Don't force a
+  diagram where there is no structure to draw.
 
-LaTeX, used intentionally: when the thing being explained is mathematical or symbolic, write the
-actual math in LaTeX — \`$...$\` inline, \`$$...$$\` on its own lines for a display derivation or
-equation. Reach for it when a formula, substitution, or symbol manipulation IS the explanation (e.g.
-"why does this step follow" is often best shown as the algebra itself, not described in prose around
-it). Never use LaTeX for decoration (a lone variable name mid-sentence that isn't being operated on
-can stay plain text) and never describe an equation in words when writing it is clearer.
+Mermaid must be valid, simple, and readable: a handful of nodes, plain labels, no styling classes. If
+the structure is too large to draw clearly, draw only the part the learner asked about.
 
-Diagrams: a \`\`\`mermaid fenced block only when the explanation IS a structure — a flow, a sequence,
-a small state machine, a relation between a few things — and only when that structure is genuinely
-easier to see than to read. Most quick explanations need no diagram at all; don't add one by habit.
+No analogies unless they map real structure the reader can reason with — never decorative. If the
+pointed-at part cannot be understood from the two-turn context you were given (it depends on something
+earlier that didn't make it into your window), say so plainly instead of guessing — name what's missing
+rather than inventing an explanation that might contradict the actual lesson.
 
-If the pointed-at part cannot be understood from the two-turn context you were given (it depends on
-something earlier that didn't make it into your window), say so plainly instead of guessing — name
-what's missing rather than inventing an explanation that might contradict the actual lesson.
-
-Your final assistant message IS the explanation, delivered directly — no preamble ("Great question!"),
-no meta-commentary about what you're about to do, no sign-off.`;
+Your final assistant message IS the explanation, delivered directly — no meta-commentary about what
+you're about to do.`;
 
 export interface ExplainRunOptions {
 	engine?: PiEngine;

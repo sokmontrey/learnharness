@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { MicIcon, Volume2Icon } from "lucide-react";
+import { MicIcon, SparklesIcon, Volume2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
+import { useExplain } from "@/components/explain-panel";
 import { PronouncePanel } from "@/components/pronounce-panel";
 import {
 	TTS_LANGUAGES,
@@ -22,11 +23,17 @@ type TtsStatus = "ok" | "key-needed" | "too-long" | "failed";
 const LANGUAGE_LABEL: Record<TtsLanguage, string> = { fr: "French", en: "English" };
 
 /**
- * Floating read-aloud buttons for transcript text selection (ElevenLabs engine).
+ * The floating selection toolbar for the transcript: Explain + read-aloud +
+ * pronunciation practice in ONE row, above the selection. They used to be
+ * two independently-positioned popups, so the Explain and read-aloud buttons
+ * landed on top of each other (owner report) — one toolbar means one anchor
+ * and no overlap.
  *
- * Shows FR + EN speaker buttons ABOVE the selection (owner choice) whenever
- * the selection is non-empty and anchored inside `scopeRef` (the transcript
- * column — sidebar/composer selections never trigger it). First click reads
+ * Shows whenever the selection is non-empty and anchored inside `scopeRef`
+ * (the transcript column — sidebar/composer selections never trigger it).
+ * Explain appears only when the selection sits inside a text block carrying
+ * `data-source-message-id` — that attribute is the target message the
+ * explainer's last-two-turns window anchors to. First read-aloud click reads
  * at natural pace; clicking the SAME language again while it speaks cancels
  * and re-reads slower (study pace via playbackRate — ElevenLabs has no
  * speed param). Clicking the other language switches to it at natural pace.
@@ -37,14 +44,15 @@ const LANGUAGE_LABEL: Record<TtsLanguage, string> = { fr: "French", en: "English
  * Read-aloud on click (never a silent failure). Over-cap selections get a
  * hint instead of a bill.
  */
-export function TtsSelectionButton({
+export function SelectionToolbar({
 	scopeRef,
 }: {
 	scopeRef: RefObject<HTMLElement | null>;
 }) {
 	const provider = useMemo(() => createTtsProvider(), []);
 	const { open: openSettings } = useSettingsDialog();
-	const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+	const { open: openExplain } = useExplain();
+	const [anchor, setAnchor] = useState<{ x: number; y: number; messageId: string | null } | null>(null);
 	const [speakingLang, setSpeakingLang] = useState<TtsLanguage | null>(null);
 	const [status, setStatus] = useState<TtsStatus>("ok");
 	const [failDetail, setFailDetail] = useState<string | null>(null);
@@ -76,6 +84,11 @@ export function TtsSelectionButton({
 				setAnchor(null);
 				return;
 			}
+			// Explain needs the transcript text block's source message id;
+			// read-aloud/practice work anywhere inside the scope. A selection
+			// without a holder simply renders the toolbar without Explain.
+			const holder = el.closest("[data-source-message-id]") as HTMLElement | null;
+			const messageId = holder?.dataset.sourceMessageId ?? null;
 			if (text !== lastText.current) {
 				lastText.current = text;
 				setStatus("ok");
@@ -87,7 +100,7 @@ export function TtsSelectionButton({
 				Math.max(rect.left + rect.width / 2, 70),
 				window.innerWidth - 70,
 			);
-			setAnchor({ x, y: rect.top });
+			setAnchor({ x, y: rect.top, messageId });
 		};
 
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -170,7 +183,28 @@ export function TtsSelectionButton({
 						transform: "translate(-50%, -100%) translateY(-8px)",
 					}}
 				>
-					<div className="flex gap-1" role="group" aria-label="Read selection aloud">
+					<div className="flex gap-1" role="group" aria-label="Selection actions">
+						{anchor.messageId && (
+							<Button
+								type="button"
+								size="xs"
+								variant="secondary"
+								data-testid="explain-selection-button"
+								aria-label="Explain selection"
+								title="Explain selection"
+								onMouseDown={(e) => e.preventDefault()}
+								onClick={() => {
+									const messageId = anchor.messageId;
+									const text = lastText.current.trim();
+									setAnchor(null);
+									if (messageId && text) openExplain({ targetMessageId: messageId, pointer: text, anchorY: anchor.y });
+								}}
+								className="cursor-pointer border border-border font-ui uppercase shadow-lg hover:bg-secondary"
+							>
+								<SparklesIcon className="size-3" />
+								Explain
+							</Button>
+						)}
 						{TTS_LANGUAGES.map((language) => (
 							<Button
 								key={language}

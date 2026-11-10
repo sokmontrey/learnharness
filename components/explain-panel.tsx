@@ -5,8 +5,8 @@
  * that calls the explain sub-agent (app/api/chats/[id]/explain-part) and
  * renders the result through the SAME markdown path as the transcript
  * (MessageResponse — LaTeX, mermaid, footnote pins all intact). Two
- * triggers feed it (explain-selection-button.tsx for a text selection,
- * the per-message corner button in chat.tsx for a free-text ask) — both
+ * triggers feed it (selection-toolbar.tsx for a text selection,
+ * the per-message Explain button in chat.tsx for a free-text ask) — both
  * go through `useExplain().open(...)`, this module owns the one visible
  * panel and its fetch lifecycle.
  *
@@ -70,7 +70,9 @@ export function ExplainProvider({
 	const [question, setQuestion] = useState("");
 	const [status, setStatus] = useState<Status>("idle");
 	const [text, setText] = useState("");
+	const [usedPointer, setUsedPointer] = useState("");
 	const [error, setError] = useState<string | null>(null);
+	const [inserted, setInserted] = useState(false);
 	const [x, setX] = useState<number | null>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const runId = useRef(0);
@@ -81,6 +83,7 @@ export function ExplainProvider({
 		setText("");
 		setError(null);
 		setQuestion("");
+		setInserted(false);
 	}, []);
 
 	usePopoverDismiss(rootRef, req !== null, close);
@@ -90,6 +93,8 @@ export function ExplainProvider({
 			const id = ++runId.current;
 			setStatus("loading");
 			setError(null);
+			setInserted(false);
+			setUsedPointer(pointer);
 			try {
 				const res = await fetch(`/api/chats/${chatId}/explain-part`, {
 					method: "POST",
@@ -114,6 +119,21 @@ export function ExplainProvider({
 		[chatId],
 	);
 
+	const insert = useCallback(async () => {
+		if (!req || !text.trim()) return;
+		try {
+			const res = await fetch(`/api/chats/${chatId}/explain-note`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ targetMessageId: req.targetMessageId, pointer: usedPointer, text }),
+			});
+			if (res.ok) setInserted(true);
+		} catch {
+			// Silent: the panel's own result still stands, and the learner can
+			// retry — a failed keep-copy is not worth another error banner.
+		}
+	}, [req, text, usedPointer, chatId]);
+
 	const open = useCallback(
 		(next: ExplainRequest) => {
 			setReq(next);
@@ -121,6 +141,7 @@ export function ExplainProvider({
 			setText("");
 			setError(null);
 			setQuestion("");
+			setInserted(false);
 			const pointer = next.pointer?.trim();
 			if (pointer) run(next.targetMessageId, pointer);
 		},
@@ -139,6 +160,18 @@ export function ExplainProvider({
 		setX(room >= MIN_MARGIN ? rect.right + MARGIN_GAP : Math.max(rect.right - PANEL_W - MARGIN_GAP, MARGIN_GAP));
 	}, [req, columnRef]);
 
+	// The cutoff fix (owner report): a fixed top + a CSS max-height alone
+	// doesn't know how much room is actually left below that top, so a
+	// panel opened low on a tall page ran off the bottom of the viewport.
+	// top AND maxHeight are derived from the SAME budget: whatever's left
+	// between the clamped top and the viewport's bottom edge. Horizontal
+	// offset is clamped too, and the width shrinks on very narrow screens,
+	// so no edge of the panel can leave the viewport.
+	const top = req ? Math.max(8, Math.min(Math.max(req.anchorY, 16), window.innerHeight - 160)) : 0;
+	const maxH = Math.max(window.innerHeight - top - 16, 120);
+	const width = req ? Math.min(PANEL_W, window.innerWidth - 32) : PANEL_W;
+	const left = x === null ? 16 : Math.min(Math.max(x, 16), window.innerWidth - width - 16);
+
 	return (
 		<ExplainContext.Provider value={{ open }}>
 			{children}
@@ -146,8 +179,8 @@ export function ExplainProvider({
 				<div
 					ref={rootRef}
 					data-testid="explain-panel"
-					className="fixed z-40 flex max-h-[70vh] w-[320px] flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
-					style={{ left: x, top: Math.min(Math.max(req.anchorY, 16), window.innerHeight - 160) }}
+					className="fixed z-40 flex flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+					style={{ left, top, maxHeight: maxH, width }}
 				>
 					<div className="flex items-center justify-between border-b border-border px-3 py-2">
 						<span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -200,6 +233,24 @@ export function ExplainProvider({
 							<MessageResponse className="lh-prose text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{text}</MessageResponse>
 						)}
 					</div>
+					{status === "done" && (
+						// Keep-copy (owner report: "no way to get the explanation back
+						// when it closes") — inserts the bordered card into the
+						// transcript (chat.tsx's data-explain-note branch); the panel
+						// itself stays ephemeral on purpose, this is the one way to keep
+						// a result past closing it.
+						<div className="flex items-center justify-end gap-2 border-t border-border px-3 py-2">
+							<button
+								type="button"
+								data-testid="explain-panel-insert"
+								disabled={inserted}
+								onClick={() => void insert()}
+								className="rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60"
+							>
+								{inserted ? "Kept in chat" : "Keep in chat"}
+							</button>
+						</div>
+					)}
 				</div>
 			)}
 		</ExplainContext.Provider>

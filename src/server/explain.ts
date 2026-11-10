@@ -11,6 +11,8 @@
 import { runExplainer } from "../agent/subagents/explainer.ts";
 import { piEngineForSpec } from "../agent/models.ts";
 import { explainContextProse, lastTwoTurnsSlice } from "../core/explain-context.ts";
+import { emit } from "../core/events.ts";
+import { newExplainNoteMessage, type ExplainNoteDetails } from "../core/native-messages.ts";
 import { modelsNotConfigured, providerKeyMissing as providerKeyMissingEnvelope, type ModelsNotConfigured, type ProviderKeyMissing } from "../core/settings.ts";
 import { resolveRoleSpec } from "../core/settings-resolution.ts";
 import { providerKeyPresent } from "./keys.ts";
@@ -49,4 +51,30 @@ export async function explainPart(chatId: string, targetMessageId: string, point
 	} catch (err) {
 		return { ok: false, status: 502, body: { error: err instanceof Error ? err.message : "Explain failed" } };
 	}
+}
+
+export interface ExplainNoteOutcome {
+	ok: true;
+}
+
+export interface ExplainNoteRefusal {
+	ok: false;
+	status: number;
+	body: { error: string };
+}
+
+/** Keeps an explain result in the transcript after the margin popover
+ *  closes (owner request: "no way to get the explanation back"). UI-only,
+ *  write-ahead, turn-less — the same discipline as the dismissal route:
+ *  the record is the only state that moves, no agent runs, and
+ *  toLlmMessages filters the marker out of the model's own context
+ *  (native-messages.ts). */
+export function insertExplainNote(chatId: string, details: ExplainNoteDetails): ExplainNoteOutcome | ExplainNoteRefusal {
+	const record = stores.chatStore.getChat(chatId);
+	if (!record) return { ok: false, status: 404, body: { error: "Unknown chat" } };
+	if (!details.text.trim()) return { ok: false, status: 400, body: { error: "Nothing to insert" } };
+	const merged = [...record.messages, newExplainNoteMessage(details)];
+	stores.chatStore.saveMessages(chatId, merged);
+	emit("record-changed", { chatId });
+	return { ok: true };
 }
