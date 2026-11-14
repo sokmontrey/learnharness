@@ -14,6 +14,8 @@ import {
 	ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { useRouter } from "next/navigation";
+import { useAskCapture, createAskThreadForSession } from "@/components/ask-capture";
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { BrailleSpinner } from "@/components/braille-spinner";
@@ -40,6 +42,7 @@ import {
 	textPartMessageId,
 	kbdEventForAction as kbdEventForChat,
 	needsContinuation,
+	type AskThreadRef,
 	type ChatInput,
 	type ChatSettings,
 	type LhMessage,
@@ -49,8 +52,9 @@ import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
-import { ArrowRightIcon, DumbbellIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
+import { ArrowRightIcon, DumbbellIcon, MessageSquareIcon, SparklesIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
+import { AskPanel } from "@/components/ask-panel";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
 import { SelectionToolbar } from "@/components/selection-toolbar";
@@ -73,6 +77,7 @@ import {
 import { CoverageRing } from "@/components/extraction-coverage";
 import {
 	activeProblemOf,
+	askTurnAnchorMap,
 	dismissedAnswer,
 	findPendingToolCall,
 	phaseAt3,
@@ -241,6 +246,46 @@ function ExplainAskButton({ messageId, prominent = false }: { messageId: string;
 function isSubagentSteer(m: LhViewMessage): boolean {
 	return (m.metadata as { subagentResult?: unknown } | undefined)?.subagentResult != null;
 }
+
+/** One Ask thread's indicator state at a source turn: both flags can be
+ *  true (the thread pinned the passage and later retrieved it). */
+interface AskBadge {
+	askChatId: string;
+	askTitle: string;
+	pinned: boolean;
+	used: boolean;
+	answerMessageId?: string;
+}
+
+/** The stacked Ask-thread badges at a turn's left edge (owner, 2026-11).
+ *  Hover names the thread and why it refers here; click opens the thread at
+ *  the answer that used this turn (or the end of the thread for a pin-only
+ *  reference). Absolutely positioned in the turn wrapper's left gutter, so
+ *  it never shifts the transcript. */
+function AskTurnIndicators({ badges, onOpen }: { badges: AskBadge[]; onOpen: (badge: AskBadge) => void }) {
+	if (badges.length === 0) return null;
+	return (
+		<div data-testid="ask-turn-indicators" className="absolute top-1 -left-8 z-10 hidden flex-col gap-1 xl:flex">
+			{badges.map((badge) => {
+				const state = badge.pinned && badge.used ? "pinned + used in an answer" : badge.pinned ? "pinned" : "used in an answer";
+				return (
+					<button
+						key={badge.askChatId}
+						type="button"
+						title={`${badge.askTitle} — ${state}`}
+						aria-label={`${badge.askTitle} — ${state}`}
+						data-testid={`ask-indicator-${badge.askChatId}`}
+						onClick={() => onOpen(badge)}
+						className="flex size-6 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+					>
+						<MessageSquareIcon className="size-3" />
+					</button>
+				);
+			})}
+		</div>
+	);
+}
+
 
 /**
  * The teaching session. All chat state lives in useChat; the server persists
@@ -519,6 +564,112 @@ export function Chat({
 	useDictationContext(messages);
 	const activeProblemRef = useRef(activeProblem);
 	activeProblemRef.current = activeProblem;
+
+	// ── Ask capture from the docks (owner, 2026-11) ──
+	// The per-question/per-problem Ask button pins the exact prompt. The
+	// pin's turn locator is the assistant message that authored the tool
+	// call, found in the NATIVE record (the view may merge groups).
+	const captureAsk = useAskCapture();
+
+	// ── Ask history popover for this session (owner, 2026-11) ──
+	const [askHistoryOpen, setAskHistoryOpen] = useState(false);
+	const [askTabs, setAskTabs] = useState<{ id: string; title: string }[]>([]);
+	const [activeAskTab, setActiveAskTab] = useState<string | null>(null);
+	const [askPanelOpen, setAskPanelOpen] = useState(false);
+	const [askHistoryThreads, setAskHistoryThreads] = useState<{ askChatId: string; title: string; refs: number; pinned: number }[] | null>(null);
+	const [askHistoryLoading, setAskHistoryLoading] = useState(false);
+	const askHistoryRef = useRef<HTMLDivElement | null>(null);
+
+	const loadAskHistory = useCallback(async () => {
+		setAskHistoryLoading(true);
+		try {
+			const res = await fetch(`/api/chats/${chatId}/ask-threads`);
+			const data = (await res.json().catch(() => null)) as { threads?: { askChatId: string; title: string; refs: number; pinned: number }[] } | null;
+			setAskHistoryThreads(data?.threads ?? []);
+		} finally {
+			setAskHistoryLoading(false);
+		}
+	}, [chatId]);
+
+	const toggleAskHistory = useCallback(() => {
+		setAskHistoryOpen((open) => {
+			const next = !open;
+			if (next) void loadAskHistory();
+			return next;
+		});
+	}, [loadAskHistory]);
+
+	const openAskThread = useCallback((id: string, title: string) => {
+		setAskTabs((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, { id, title }]));
+		setActiveAskTab(id);
+		setAskPanelOpen(true);
+		setAskHistoryOpen(false);
+	}, []);
+
+	const newAskFromSession = useCallback(async () => {
+		const id = await createAskThreadForSession(chatId, titleText);
+		if (id) openAskThread(id, `Ask about ${titleText}`);
+	}, [chatId, titleText, openAskThread]);
+
+	useEffect(() => {
+		if (!askHistoryOpen) return;
+		const onDown = (e: MouseEvent) => {
+			if (askHistoryRef.current && !askHistoryRef.current.contains(e.target as Node)) setAskHistoryOpen(false);
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setAskHistoryOpen(false);
+		};
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [askHistoryOpen]);
+	const askHostMessageId = useCallback(
+		(toolCallId: string): string | undefined => {
+			for (const m of nativeMessages) {
+				if ((m as { role?: string }).role !== "assistant") continue;
+				const content = (m as { content?: unknown }).content;
+				if (!Array.isArray(content)) continue;
+				for (const block of content as Array<Record<string, unknown>>) {
+					if (block.type === "toolCall" && block.id === toolCallId) return (m as { id?: string }).id;
+				}
+			}
+			return undefined;
+		},
+		[nativeMessages],
+	);
+	const onAskQuestion = useCallback(
+		(text: string) => {
+			if (!pending) return;
+			const messageId = askHostMessageId(pending.toolCallId);
+			if (!messageId) return;
+			void captureAsk({
+				sourceChatId: chatId,
+				sourceTitle: titleText,
+				messageIds: [messageId],
+				text,
+				label: "Question prompt",
+			});
+		},
+		[pending, askHostMessageId, captureAsk, chatId, titleText],
+	);
+	const onAskProblem = useCallback(
+		(text: string) => {
+			if (!activeProblem) return;
+			const messageId = askHostMessageId(activeProblem.toolCallId);
+			if (!messageId) return;
+			void captureAsk({
+				sourceChatId: chatId,
+				sourceTitle: titleText,
+				messageIds: [messageId],
+				text,
+				label: "Practice problem",
+			});
+		},
+		[activeProblem, askHostMessageId, captureAsk, chatId, titleText],
+	);
 
 	const localStream = status === "submitted" || status === "streaming";
 	const busy = localStream || turnInFlight;
@@ -1193,6 +1344,77 @@ export function Chat({
 		void syncFromServer();
 	});
 
+	// ── Ask indicators (owner, 2026-11) ──
+	// Every Ask thread that refers to a turn of THIS transcript — pinned
+	// passages and turns retrieved into an answer's context. Notify-then-
+	// fetch: ask-refs-changed names this chat, then we fetch the refs and
+	// merge them at each turn's anchor. The indicator itself is quiet
+	// scaffolding; it never enters the record.
+	const router = useRouter();
+	const [askRefs, setAskRefs] = useState<AskThreadRef[]>([]);
+	const fetchAskRefs = useCallback(async () => {
+		try {
+			const res = await fetch(`/api/chats/${chatId}/ask-refs`);
+			if (!res.ok) return;
+			const data = (await res.json()) as { refs?: AskThreadRef[] };
+			setAskRefs(data.refs ?? []);
+		} catch {
+			/* transient fetch failure — the next event/resync re-fetches */
+		}
+	}, [chatId]);
+	useEffect(() => {
+		void fetchAskRefs();
+	}, [fetchAskRefs]);
+	useServerEvent("ask-refs-changed", (p) => {
+		if (p.chatId !== chatId) return;
+		void fetchAskRefs();
+	});
+	useServerResync(() => void fetchAskRefs());
+
+	// Merge refs per (turn anchor, Ask thread): a thread can both pin and
+	// later retrieve the same turn — one badge, both flags.
+	const askBadges = useMemo(() => {
+		const anchors = askTurnAnchorMap(nativeMessages);
+		const perAnchor = new Map<string, Map<string, AskBadge>>();
+		for (const ref of askRefs) {
+			const seen = new Set<string>();
+			for (const id of ref.messageIds) {
+				const anchor = anchors.get(id) ?? id;
+				if (seen.has(anchor)) continue;
+				seen.add(anchor);
+				let perThread = perAnchor.get(anchor);
+				if (!perThread) {
+					perThread = new Map<string, AskBadge>();
+					perAnchor.set(anchor, perThread);
+				}
+				const existing = perThread.get(ref.askChatId);
+				if (existing) {
+					existing.pinned = existing.pinned || ref.reason === "pinned";
+					existing.used = existing.used || ref.reason === "used";
+					if (ref.answerMessageId) existing.answerMessageId = ref.answerMessageId;
+				} else {
+					perThread.set(ref.askChatId, {
+						askChatId: ref.askChatId,
+						askTitle: ref.askTitle,
+						pinned: ref.reason === "pinned",
+						used: ref.reason === "used",
+						...(ref.answerMessageId ? { answerMessageId: ref.answerMessageId } : {}),
+					});
+				}
+			}
+		}
+		const out = new Map<string, AskBadge[]>();
+		for (const [anchor, perThread] of perAnchor) out.set(anchor, [...perThread.values()]);
+		return out;
+	}, [askRefs, nativeMessages]);
+	const openAskBadge = useCallback(
+		(badge: AskBadge) => {
+			const at = badge.answerMessageId ? `?at=${encodeURIComponent(badge.answerMessageId)}` : "";
+			router.push(`/chat/${badge.askChatId}${at}`);
+		},
+		[router],
+	);
+
 	const onSend = () => {
 		if (pending || compacting) return;
 		/* FINISH DICTATION FIRST (owner, 2026-10-01): a learner who keeps
@@ -1336,6 +1558,70 @@ export function Chat({
 							<div className="min-w-4 flex-1" aria-hidden="true" />
 					</>
 					)}
+					{/* Ask (owner, 2026-11): session-level Ask history popover —
+					    lists Ask threads that refer to this session, with a
+					    “New Ask” entry to start one linked to the whole session. */}
+					<div className="relative" ref={askHistoryRef}>
+						<Hint label="Ask about this session" side="bottom">
+							<button
+								type="button"
+								data-testid="ask-history-button"
+								onClick={toggleAskHistory}
+								className="lh-no-drag flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+							>
+								<MessageSquareIcon className="size-3.5" aria-hidden />
+								Ask
+								{askHistoryThreads && askHistoryThreads.length > 0 && (
+									<span className="rounded-full bg-accent px-1.5 text-[10px] text-foreground">{askHistoryThreads.length}</span>
+								)}
+							</button>
+						</Hint>
+						{askHistoryOpen && (
+							<div
+								data-testid="ask-history-popover"
+								className="absolute right-0 top-full z-30 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+							>
+								<div className="border-b border-border/60 px-3 py-2 font-ui text-xs text-muted-foreground">Ask threads about this session</div>
+								<div className="max-h-64 overflow-y-auto p-1">
+									{askHistoryLoading && (
+										<div className="px-2 py-3 text-xs text-muted-foreground">Loading…</div>
+									)}
+									{!askHistoryLoading && (askHistoryThreads ?? []).length === 0 && (
+										<div className="px-2 py-3 text-xs text-muted-foreground">No Ask threads refer to this session yet.</div>
+									)}
+									{!askHistoryLoading &&
+										(askHistoryThreads ?? []).map((t) => (
+											<button
+												key={t.askChatId}
+												type="button"
+												onClick={() => {
+													setAskHistoryOpen(false);
+													openAskThread(t.askChatId, t.title);
+												}}
+												className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+											>
+												<MessageSquareIcon className="size-3 shrink-0 text-muted-foreground" />
+												<span className="min-w-0 flex-1 truncate">{t.title}</span>
+												<span className="font-ui text-[10px] uppercase tracking-wide text-muted-foreground">
+													{t.pinned > 0 ? `${t.pinned} pinned` : `${t.refs} refs`}
+												</span>
+											</button>
+										))}
+								</div>
+								<div className="border-t border-border/60 p-2">
+									<button
+										type="button"
+										onClick={() => void newAskFromSession()}
+										className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90"
+									>
+										<MessageSquareIcon className="size-3.5" aria-hidden />
+										New Ask thread
+									</button>
+								</div>
+							</div>
+						)}
+					</div>
+
 					{/* The plan chip (owner, plan-placement round): session-level
 					    structure beside the phase chip — access to the full-DAG popup
 					    at every width; the marginalia is the wide-screen glance view. */}
@@ -1386,7 +1672,7 @@ export function Chat({
 
 				<SessionFind scopeRef={sessionFindScopeRef} scrollContextRef={scrollContextRef} />
 				<div ref={sessionFindScopeRef} className="relative flex min-h-0 flex-1">
-				<SelectionToolbar scopeRef={sessionFindScopeRef} />
+				<SelectionToolbar scopeRef={sessionFindScopeRef} askSource={{ chatId, title: titleText }} />
 				<Conversation className="h-full min-w-0 flex-1" initial="instant" contextRef={scrollContextRef}>
 					<SessionMessageNavigation />
 					<ConversationContent className="min-h-full gap-0 p-0">
@@ -1501,8 +1787,9 @@ export function Chat({
 										    inset (the band is the authorship mark against the agent's
 										    transparent prose). The "You" label stays — one register
 										    with the thinking labels. */
-										className="my-2 w-full border-l-[calc(3ch-14px)] border-muted-foreground/30 bg-card py-1 pl-[14px] pr-4 font-ui text-xs"
+										className="relative my-2 w-full border-l-[calc(3ch-14px)] border-muted-foreground/30 bg-card py-1 pl-[14px] pr-4 font-ui text-xs"
 									>
+										<AskTurnIndicators badges={askBadges.get(m.id ?? "") ?? []} onOpen={openAskBadge} />
 												{/* The rail GROUPS (owner round 4, 2026-10-05): the YOU heading
 												    sits INSIDE the rail, same mono-xs register and same 1ch
 												    rail as the thinking rows — one quote geometry. */}
@@ -1513,6 +1800,7 @@ export function Chat({
 											</div>
 									) : (
 									<Message from="assistant" className="group/explain-msg relative max-w-full">
+									<AskTurnIndicators badges={askBadges.get(m.id ?? "") ?? []} onOpen={openAskBadge} />
 									<ExplainAskButton messageId={m.id ?? ""} prominent={m.id === lastAssistantId} />
 									<MessageContent className="w-full">
 											{m.parts.map((part, pi) => {
@@ -1675,6 +1963,8 @@ export function Chat({
 					compactionRunning={compacting}
 					onSubmitThinking={submitThinking}
 					chatId={chatId}
+					onAskQuestion={onAskQuestion}
+					onAskProblem={onAskProblem}
 					plan={hasPlan ? <PlanMarginalia messages={messages} /> : undefined}
 					onOpenPlan={() => setPlanOpen(true)}
 					requiresReveal={requiresReveal}
@@ -1745,6 +2035,37 @@ export function Chat({
 				/>
 				</Conversation>
 
+				{askPanelOpen && (
+					<aside
+						data-testid="ask-panel"
+						className="flex h-full w-[26rem] shrink-0 flex-col border-l border-border bg-background"
+					>
+						{askTabs.length > 1 && (
+							<div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border/60 px-2 py-1.5">
+								{askTabs.map((t) => (
+									<button
+										key={t.id}
+										type="button"
+										onClick={() => setActiveAskTab(t.id)}
+										className={`shrink-0 rounded-md px-2 py-1 text-xs ${activeAskTab === t.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"}`}
+									>
+										{t.title}
+									</button>
+								))}
+							</div>
+						)}
+						<div className="min-h-0 flex-1">
+							{activeAskTab && (
+								<AskPanel
+									key={activeAskTab}
+									chatId={activeAskTab}
+									title={askTabs.find((t) => t.id === activeAskTab)?.title ?? "Ask"}
+									onClose={() => setAskPanelOpen(false)}
+								/>
+							)}
+						</div>
+					</aside>
+				)}
 				{/* The session-scoped focuses (chrome-melt wave, 2026-09-19): mounted
 				    INSIDE the session area — absolute inset-0 siblings of the scroller,
 				    so they own the area below the drag bar, right of the sidebar, and
@@ -1910,6 +2231,8 @@ function DockOverlay({
 	composer,
 	onSubmitAnswer,
 	chatId,
+	onAskQuestion,
+	onAskProblem,
 	onReserve,
 	plan,
 	onOpenPlan,
@@ -1944,6 +2267,10 @@ function DockOverlay({
 	onSubmitAnswer: (output: QuestionAnswerData) => void;
 	/** The model control's pass-through (the stats bar hosts it). */
 	chatId: string;
+	/** Capture the pending question / active problem as an Ask reference
+	 *  (owner, 2026-11). Absent = no Ask button in that dock. */
+	onAskQuestion?: (text: string) => void;
+	onAskProblem?: (text: string) => void;
 	/** Reports the dock's settled height (block + gradient) — ChatView's
 	 *  dockReserve state feeds the transcript's spacer from it. */
 	onReserve: (h: number) => void;
@@ -2395,6 +2722,7 @@ function DockOverlay({
 									onEscape={dictationCancel}
 									dictationClaim={!revealPending}
 									compactionRunning={compactionRunning}
+									onAsk={onAskQuestion}
 								/>
 							) : practice ? (
 								<PracticeDock
@@ -2408,6 +2736,7 @@ function DockOverlay({
 									onSubmit={onSubmitThinking}
 									onEscape={dictationCancel}
 									compactionRunning={compactionRunning}
+									onAsk={onAskProblem}
 								/>
 							) : (
 								composer

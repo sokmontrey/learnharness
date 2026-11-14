@@ -53,7 +53,8 @@ export type ModelRole =
 	| "pdfReader"
 	| "extractor"
 	| "auditor"
-	| "explainer";
+	| "explainer"
+	| "ask";
 
 /**
  * The LIVE graph store (src/store/graph.ts) — owned by the app's extraction

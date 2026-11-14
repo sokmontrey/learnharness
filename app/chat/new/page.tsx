@@ -1,6 +1,6 @@
 import { NewSession } from "@/components/new-session";
 import { readSettingsRecord } from "@/src/server";
-import { slotsConfigured } from "@/src/core";
+import { resolveSettings, slotsConfigured } from "@/src/core";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
  *
  * The draft's model control binds the STRONG SLOT (the new-session
  * default); the session the first send creates is stamped from it
- * server-side (per-session models, owner 2026-09-28).
+ * server-side (per-session models, owner 2026-09-28). Ask drafts gate on
+ * the separate global Ask role instead.
  */
 export default async function NewSessionPage({
 	searchParams,
@@ -21,10 +22,13 @@ export default async function NewSessionPage({
 	searchParams: Promise<{ mode?: string }>;
 }) {
 	const { mode } = await searchParams;
+	const record = readSettingsRecord();
+	const resolved = resolveSettings(record ?? null);
 	return (
 		<NewSession
-			initialConfigured={slotsConfigured(readSettingsRecord()?.models)}
-			mode={mode === "practice" ? "practice" : "teach"}
+			initialConfigured={slotsConfigured(record?.models)}
+			askConfigured={Boolean(resolved.agent.models.ask)}
+			mode={mode === "practice" ? "practice" : mode === "ask" ? "ask" : "teach"}
 		/>
 	);
 }

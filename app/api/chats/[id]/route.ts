@@ -1,4 +1,4 @@
-import { compactionInFlight, deleteChatSession, getChat, isTurnRunning, sessionCoverage, sessionCost, stores, type ChatDeleteMode } from "@/src/server";
+import { askContextView, compactionInFlight, deleteChatSession, getChat, isTurnRunning, sessionCoverage, sessionCost, stores, type ChatDeleteMode } from "@/src/server";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
 	const { id } = await params;
@@ -21,6 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 		turnInFlight: isTurnRunning(id),
 		compacting: compactionInFlight(id),
 		coverage: sessionCoverage(id),
+		...(chat.kind === "ask" ? { askContext: askContextView(chat) } : {}),
 	});
 }
 

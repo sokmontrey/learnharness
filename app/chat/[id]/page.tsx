@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
+import { Ask } from "@/components/ask";
 import { Chat } from "@/components/chat";
 import { slotsConfigured } from "@/src/core";
-import { compactionInFlight, getChat, isTurnRunning, readSettingsRecord } from "@/src/server";
+import { askContextView, compactionInFlight, effectiveSettings, getChat, isTurnRunning, readSettingsRecord } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -10,11 +11,30 @@ export default async function ChatPage({
 	searchParams,
 }: {
 	params: Promise<{ id: string }>;
-	searchParams: Promise<{ prompt?: string }>;
+	searchParams: Promise<{ prompt?: string; at?: string }>;
 }) {
-	const [{ id }, { prompt }] = await Promise.all([params, searchParams]);
+	const [{ id }, { prompt, at }] = await Promise.all([params, searchParams]);
 	const chat = getChat(id);
 	if (!chat) notFound();
+	const kind = chat.kind ?? "teach";
+	// ASK BRANCH (owner, 2026-11): one route, two surfaces. Ask has no
+	// teaching chrome and no per-session model — its global role resolves
+	// from settings (own override → cheap slot).
+	if (kind === "ask") {
+		return (
+			<Ask
+				key={chat.id}
+				chatId={chat.id}
+				title={chat.title}
+				initialMessages={chat.messages}
+				initialContext={askContextView(chat)}
+				initialConfigured={Boolean(effectiveSettings().agent.models.ask)}
+				initiallyInFlight={isTurnRunning(chat.id)}
+				atAnswerId={at}
+				initialPrompt={prompt}
+			/>
+		);
+	}
 	// The persistent setup CTA's seed (BYOK, owner 2026-09-22): slotsConfigured
 	// over the settings record, server-read — the same gate home/new read. The
 	// server's 503 stays the truth; this only decides whether the pill rides.
@@ -24,7 +44,7 @@ export default async function ChatPage({
 			key={chat.id}
 			chatId={chat.id}
 			title={chat.title}
-			kind={chat.kind ?? "teach"}
+			kind={kind}
 			// Wave D: the record IS native agent history — the client view is
 				// derived app-side (core/view.ts projectView; GET serves the same
 				// native messages).

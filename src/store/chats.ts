@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { PATHS } from "../../config.ts";
 import { emit } from "../core/events.ts";
 import type { ChatStore } from "../core/ports.ts";
-import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, PlanTree, TurnUsage } from "../core/contracts.ts";
+import type { AskContext, AskLink, AskPin, AskUsage, ChatKind, ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, PlanTree, TurnUsage } from "../core/contracts.ts";
 import { CURRENT_CHAT_VERSION } from "../core/contracts.ts";
 import type { LhMessage } from "../core/native-messages.ts";
 import { activeProblemOf, danglingQuestionOf } from "../core/native-messages.ts";
@@ -32,7 +32,7 @@ function chatFile(id: string): string {
  *  phase, busy, pendingQuestion) is already announced by turn-started /
  *  turn-settled, which the sidebar refetches on. Silence here is law,
  *  not oversight. */
-function createChat(title: string, kind?: "practice"): ChatRecord {
+function createChat(title: string, kind?: ChatKind): ChatRecord {
 	const now = new Date().toISOString();
 	const record: ChatRecord = {
 		id: `chat_${Date.now().toString(36)}_${crypto.randomUUID().slice(0, 8)}`,
@@ -40,9 +40,9 @@ function createChat(title: string, kind?: "practice"): ChatRecord {
 		createdAt: now,
 		updatedAt: now,
 		messages: [],
-		// Practice sessions carry the marker; teach stays ABSENT (absence
-		// reads as teach — pre-practice records never migrate).
-		...(kind === "practice" ? { kind: "practice" as const } : {}),
+		// Practice/Ask sessions carry the marker; teach stays ABSENT
+		// (absence reads as teach — older records never migrate).
+		...(kind && kind !== "teach" ? { kind } : {}),
 	};
 	fs.mkdirSync(PATHS.chats, { recursive: true });
 	writeChat(record);
@@ -84,7 +84,7 @@ function listChats(): ChatSummary[] {
 			.filter((f) => f.endsWith(".json"))
 			.map((f) => getChat(f.slice(0, -5)))
 			.filter((r): r is ChatRecord => r !== null)
-			.map(({ messages, tree, turns, extractions, ...summary }) => {
+			.map(({ messages, tree, turns, extractions, ask, ...summary }) => {
 				// Per-record isolation (Wave B): a record whose messages fail the
 				// projection (e.g. pre-Wave-B UIMessage-format scratch — the
 				// zero-back-compat wipe makes these "corrupt") must not blank the
@@ -195,6 +195,98 @@ function deleteChat(id: string): boolean {
 	}
 }
 
+/** The Ask-thread context (owner, 2026-11): reads the record's `ask` block.
+ *  Absent on non-Ask records; the route layer owns 404ing a non-Ask id. */
+function getAskContext(id: string): AskContext | undefined {
+	return getChat(id)?.ask;
+}
+
+/** Link a source session (idempotent per source — a second add keeps the
+ *  original timestamp). Even when the link already exists the write is
+ *  skipped, so a no-op add cannot churn the file. */
+function addAskLink(id: string, link: AskLink): AskContext {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const ctx = record.ask ?? {};
+	const links = ctx.links ?? [];
+	if (links.some((l) => l.chatId === link.chatId)) return ctx;
+	record.ask = { ...ctx, links: [...links, link] };
+	writeChat(record);
+	return record.ask;
+}
+
+/** Unlink a source session; its pins are references TO that source, so they
+ *  go with it (the chips above the composer stay truthful). */
+function removeAskLink(id: string, sourceChatId: string): AskContext {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const ctx = record.ask ?? {};
+	record.ask = {
+		...ctx,
+		links: (ctx.links ?? []).filter((l) => l.chatId !== sourceChatId),
+		pins: (ctx.pins ?? []).filter((p) => p.chatId !== sourceChatId),
+	};
+	writeChat(record);
+	return record.ask;
+}
+
+/** Pin a passage/turn to the Ask thread. Pinning also links its source
+ *  session — a pin whose session isn't linked would be unretrievable. */
+function addAskPin(id: string, pin: AskPin): AskContext {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const ctx = record.ask ?? {};
+	const pins = ctx.pins ?? [];
+	if (pins.some((p) => p.id === pin.id)) return ctx;
+	const links = ctx.links ?? [];
+	record.ask = {
+		...ctx,
+		links: links.some((l) => l.chatId === pin.chatId) ? links : [...links, { chatId: pin.chatId, linkedAt: pin.createdAt }],
+		pins: [...pins, pin],
+	};
+	writeChat(record);
+	return record.ask;
+}
+
+/** Remove one pinned passage (the link survives — other pins may use it,
+ *  and automatic retrieval is a separate choice). */
+function removeAskPin(id: string, pinId: string): AskContext {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const ctx = record.ask ?? {};
+	record.ask = { ...ctx, pins: (ctx.pins ?? []).filter((p) => p.id !== pinId) };
+	writeChat(record);
+	return record.ask;
+}
+
+/** Append one answer's retrieval log — idempotent per answer message id
+ *  (the persist seam can replay a turn without double-lighting the
+ *  indicators). */
+function appendAskUsage(id: string, usage: AskUsage): void {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const ctx = record.ask ?? {};
+	const usages = ctx.usages ?? [];
+	if (usages.some((u) => u.messageId === usage.messageId)) return;
+	record.ask = { ...ctx, usages: [...usages, usage] };
+	writeChat(record);
+}
+
+/** Source deletion cleanup: drop every link/pin pointing at the deleted
+ *  session so refs never point at a missing record. */
+function removeAskSource(id: string, sourceChatId: string): AskContext {
+	const record = getChat(id);
+	if (!record) throw new Error(`Chat not found: ${id}`);
+	const ctx = record.ask ?? {};
+	record.ask = {
+		...ctx,
+		links: (ctx.links ?? []).filter((l) => l.chatId !== sourceChatId),
+		pins: (ctx.pins ?? []).filter((p) => p.chatId !== sourceChatId),
+	};
+	writeChat(record);
+	return record.ask;
+}
+
 /** Persist the session plan tree (plan tools call this in execute). */
 function saveTree(id: string, tree: PlanTree): void {
 	const record = getChat(id);
@@ -216,4 +308,11 @@ export const chatStore: ChatStore = {
 	deleteChat,
 	appendTurnUsage,
 	appendExtractionUsage,
+	getAskContext,
+	addAskLink,
+	removeAskLink,
+	addAskPin,
+	removeAskPin,
+	appendAskUsage,
+	removeAskSource,
 };

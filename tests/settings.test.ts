@@ -204,7 +204,7 @@ describe("sanitizeUserSettings", () => {
 		assert.deepEqual(out.agent?.tools, { quiz: false, demo: true });
 	});
 
-	it("BACKGROUND_MODEL_ROLES matches the six background roles (explainer added, annotation wave 2026-11)", () => {
+	it("BACKGROUND_MODEL_ROLES matches the six background roles plus ask (explainer 2026-11, ask 2026-11)", () => {
 		assert.deepEqual([...BACKGROUND_MODEL_ROLES], [
 			"researcher",
 			"demoBuilder",
@@ -212,6 +212,7 @@ describe("sanitizeUserSettings", () => {
 			"extractor",
 			"auditor",
 			"explainer",
+			"ask",
 		]);
 	});
 });

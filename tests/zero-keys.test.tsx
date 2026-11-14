@@ -132,6 +132,7 @@ const catalog = (strongProvider: string | null, ...keyedProviders: string[]): Mo
 		extractor: null,
 		auditor: null,
 		explainer: null,
+		ask: null,
 	},
 	slots: {
 		strong: strongProvider

@@ -11,6 +11,10 @@
 
 import type { LhMessage } from "./native-messages.ts";
 import type {
+	AskContext,
+	AskLink,
+	AskPin,
+	AskUsage,
 	ChatRecord,
 	ChatSettings,
 	ChatSummary,
@@ -33,8 +37,8 @@ import type { UserSettings } from "./settings.ts";
 export interface ChatStore {
 	/** Create a session record (persisted immediately). */
 	/** Create a session record; kind "practice" marks a practice session
-	 *  (absent = teach, the default). */
-	createChat(title: string, kind?: "practice"): ChatRecord;
+	 *  (absent = teach, the default). "ask" marks a persistent Ask thread. */
+	createChat(title: string, kind?: "practice" | "ask"): ChatRecord;
 	/** The full record, or null if unknown id / corrupt file. */
 	getChat(id: string): ChatRecord | null;
 	/** All sessions, newest activity first (the sidebar's list view). */
@@ -54,6 +58,20 @@ export interface ChatStore {
 	/** Persist the per-chat model/thinking settings (the model control).
 	 *  Replace-whole: the picker sends the complete settings object. */
 	saveSettings(id: string, settings: ChatSettings): void;
+	/** The Ask-thread context, or undefined when the record/context absent. */
+	getAskContext(id: string): AskContext | undefined;
+	/** Link a source session to an Ask thread (idempotent per source). */
+	addAskLink(id: string, link: AskLink): AskContext;
+	/** Unlink a source session; its pins for that source go too. */
+	removeAskLink(id: string, sourceChatId: string): AskContext;
+	/** Add a pinned passage/turn (idempotent per pin id). */
+	addAskPin(id: string, pin: AskPin): AskContext;
+	/** Remove one pinned passage. */
+	removeAskPin(id: string, pinId: string): AskContext;
+	/** Append one answer's retrieval log (idempotent per answer message id). */
+	appendAskUsage(id: string, usage: AskUsage): void;
+	/** Drop every link/pin pointing at a deleted source session. */
+	removeAskSource(id: string, sourceChatId: string): AskContext;
 	/** Rename a session (the header's click-to-edit title, 2026-09-17).
 	 * Like saveSettings: a rename is NOT conversation activity — updatedAt
 	 * stays put, so sidebar order never churns on a rename. */

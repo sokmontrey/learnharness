@@ -42,6 +42,10 @@ export * from "./math-delims.ts";
 export * from "./native-messages.ts";
 export * from "./compaction.ts";
 export * from "./input-events.ts";
+// Ask retrieval (owner, 2026-11): turn grouping, anchor map, and the
+// deterministic context selection. Pure + browser-safe — the transcript
+// uses askTurnAnchorMap client-side, the server uses retrieveAskContext.
+export * from "./ask-context.ts";
 // Wave D (owner-approved 2026-09-26): the client view model — the grouping
 // canon (one continuous assistant document, step separators) ported from
 // the deleted server projection to the client side. Pure, browser-safe.

@@ -18,7 +18,7 @@ import { KeysSection } from "../components/settings/keys-section.tsx";
 import { KeyboardSection } from "../components/settings/keyboard-section.tsx";
 import type { GraphSettings } from "../src/core/index.ts";
 import { SettingsDialogBody, SettingsDialogProvider } from "../components/settings/settings-dialog.tsx";
-import { KEYBOARD_ACTIONS } from "../src/core/index.ts";
+import { KEYBOARD_ACTIONS, slotsConfigured } from "../src/core/index.ts";
 
 /** The full opening tag of the element carrying a testid — attribute
  *  order in React output is not contractual, so assertions run on the
@@ -77,7 +77,7 @@ describe("AgentSection (thin SSR)", () => {
 		// carries a Default row (menu-default testid is retired).
 		assert.equal((html.match(/>Default<\/span>/g) ?? []).length, 0, "no Default trigger");
 		assert.ok(!html.includes('data-testid="menu-default"'), "no Default row");
-		assert.equal((html.match(/>—<\/span>/g) ?? []).length, 6, "three slots × two — triggers");
+		assert.equal((html.match(/>—<\/span>/g) ?? []).length, 10, "five rows (strong/cheap/vision/fast/ask) × two — triggers");
 		// the per-role rows are GONE (slots-only)
 		for (const role of ["researcher", "demoBuilder", "visualMaker"]) {
 			assert.ok(!html.includes(`data-testid="role-row-${role}"`), `${role} retired`);
@@ -85,6 +85,41 @@ describe("AgentSection (thin SSR)", () => {
 		assert.ok(html.includes('data-testid="group-models"'), "Models sub-group");
 		assert.ok(html.includes('data-testid="group-tools"'), "Tools sub-group");
 		assert.ok(html.includes('data-testid="group-prompts"'), "System prompts sub-group");
+	});
+
+	it("the Ask row rides the Models group, separate from the three slots (Ask wave 2026-11)", () => {
+		const html = renderToStaticMarkup(
+			<AgentSection agent={undefined} models={undefined} graph={undefined} onSectionChange={() => {}} onModelsChange={() => {}} />,
+		);
+		assert.ok(html.includes('data-testid="slot-row-ask"'), "the Ask row");
+		assert.ok(html.includes('data-testid="slot-model-ask"'), "its model trigger");
+		assert.ok(html.includes('data-testid="slot-thinking-ask"'), "its thinking trigger");
+		assert.ok(html.includes("Answers about your sessions"), "the row's hint");
+		assert.ok(html.includes("falls back to the Cheap slot"), "the fallback language");
+		// The override renders in the trigger when set.
+		const overridden = renderToStaticMarkup(
+			<AgentSection
+				agent={{ models: { ask: { model: { provider: "groq", id: "llama-3.3-70b-versatile" } } } }}
+				models={undefined}
+				graph={undefined}
+				onSectionChange={() => {}}
+				onModelsChange={() => {}}
+			/>,
+		);
+		assert.ok(overridden.includes("llama-3.3-70b-versatile"), "the Ask override is visible");
+	});
+
+	it("the Ask role never counts as a fourth model slot (slotsConfigured stays three)", () => {
+		// Ask is a BACKGROUND role drawing the Cheap slot — it has no slot
+		// of its own, so an Ask override cannot satisfy the first-run gate.
+		assert.equal(
+			slotsConfigured({
+				strong: { model: { provider: "zai", id: "s" } },
+				cheap: { model: { provider: "zai", id: "c" } },
+			}),
+			false,
+			"Ask does not stand in for vision",
+		);
 	});
 
 	it("the search-engine row renders with its live reason (search wave 2026-09-20)", () => {

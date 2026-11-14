@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { MicIcon, SparklesIcon, Volume2Icon } from "lucide-react";
+import { MicIcon, MessageSquareIcon, SparklesIcon, Volume2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
 import { useExplain } from "@/components/explain-panel";
+import { useAskCapture } from "@/components/ask-capture";
 import { PronouncePanel } from "@/components/pronounce-panel";
 import {
 	TTS_LANGUAGES,
@@ -46,12 +47,17 @@ const LANGUAGE_LABEL: Record<TtsLanguage, string> = { fr: "French", en: "English
  */
 export function SelectionToolbar({
 	scopeRef,
+	askSource,
 }: {
 	scopeRef: RefObject<HTMLElement | null>;
+	/** The transcript's session — present only on teaching/practice views.
+	 *  Absent = no Ask capture action (the Ask surface has no toolbar). */
+	askSource?: { chatId: string; title: string };
 }) {
 	const provider = useMemo(() => createTtsProvider(), []);
 	const { open: openSettings } = useSettingsDialog();
 	const { open: openExplain } = useExplain();
+	const captureAsk = useAskCapture();
 	const [anchor, setAnchor] = useState<{ x: number; y: number; messageId: string | null } | null>(null);
 	const [speakingLang, setSpeakingLang] = useState<TtsLanguage | null>(null);
 	const [status, setStatus] = useState<TtsStatus>("ok");
@@ -203,6 +209,35 @@ export function SelectionToolbar({
 							>
 								<SparklesIcon className="size-3" />
 								Explain
+							</Button>
+						)}
+						{askSource && anchor.messageId && (
+							<Button
+								type="button"
+								size="xs"
+								variant="secondary"
+								data-testid="ask-selection-button"
+								aria-label="Start an Ask thread from this selection"
+								title="Start an Ask thread from this selection"
+								onMouseDown={(e) => e.preventDefault()}
+								onClick={() => {
+									const messageId = anchor.messageId;
+									const text = lastText.current.trim();
+									setAnchor(null);
+									if (messageId && text) {
+										void captureAsk({
+											sourceChatId: askSource.chatId,
+											sourceTitle: askSource.title,
+											messageIds: [messageId],
+											text,
+											label: "Selected passage",
+										});
+									}
+								}}
+								className="cursor-pointer border border-border font-ui uppercase shadow-lg hover:bg-secondary"
+							>
+								<MessageSquareIcon className="size-3" />
+								Ask
 							</Button>
 						)}
 						{TTS_LANGUAGES.map((language) => (

@@ -108,6 +108,10 @@ export interface AgentBuildOptions {
 	/** Tests may pass a bare tool registry to drive deterministic flows.
 	 *  An explicit registry is NEVER toggle-filtered — the caller owns it. */
 	tools?: Record<string, AgentTool<any>>;
+	/** Explicit system prompt override (Ask threads, owner 2026-11): the
+	 *  handler composes the ask instructions + retrieved context fresh per
+	 *  turn. Absent = the role's normal composed prompt. */
+	systemPrompt?: string;
 	/** The resolved per-user tool toggles (core/pending EnabledTools — the
 	 *  2026-09-19 P2 bridge: Platform's chat-handler passes
 	 *  effective.agent.tools; the factories drop any tool explicitly false.
@@ -175,9 +179,9 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 	// ("practice" is not a ModelRole) honest about that.
 	const engine = opts.engine ?? piEngineFor(kind as "prober" | "teacher");
 	const stopper = makeQuestionStopper();
-	const systemPrompt = opts.promptSwitches
+	const systemPrompt = opts.systemPrompt ?? (opts.promptSwitches
 		? composeInstructions(kind, opts.promptSwitches)
-		: composedInstructions[kind]!;
+		: composedInstructions[kind]!);
 	// Debug recorder (owner, 2026-10-04): raw provider events when
 	// LH_PROVIDER_EVENTS=1 and the caller handed a chatId; undefined is
 	// the normal no-observer path (tests, env-off).
@@ -326,4 +330,15 @@ export type ProberAgent = ReturnType<typeof createProberAgent>;
 export type TeacherAgent = ReturnType<typeof createTeacherAgent>;
 export type PracticeAgent = ReturnType<typeof createPracticeAgent>;
 export type TeachingAgent = ProberAgent | TeacherAgent | PracticeAgent;
+
+/** The Ask agent (owner, 2026-11): one fast model call, NO tools. It rides
+ *  the mechanical construction seam (native state, provider stream,
+ *  conversion) but always receives its own system prompt from the handler
+ *  (ask instructions + retrieved linked-transcript context) and an injected
+ *  engine resolved from the global Ask role. The "teacher" kind argument is
+ *  only the seam's shape — no teacher prompt or toolset is used. */
+export function createAskAgent(opts: AgentBuildOptions = {}) {
+	if (!opts.systemPrompt) throw new Error("createAskAgent requires a system prompt");
+	return baseAgentOptions("teacher", opts, []);
+}
 

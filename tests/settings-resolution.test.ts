@@ -206,6 +206,39 @@ describe("the slot tier (BYOK, owner 2026-09-22)", () => {
 		assert.deepEqual(resolveRoleSpec("pdfReader", visionRecord), { provider: "zai", id: "v", thinkingLevel: "low" });
 		assert.equal(resolveRoleSpec("teacher", null), undefined);
 	});
+
+	it("resolveRoleSpec: ask falls back to the Cheap slot; its own override wins", () => {
+		const record: UserSettings = {
+			version: 1,
+			models: { cheap: { model: { provider: "openrouter", id: "qwen/qwen3.8-flash" }, thinkingLevel: "low" } },
+		};
+		assert.deepEqual(resolveRoleSpec("ask", record), {
+			provider: "openrouter",
+			id: "qwen/qwen3.8-flash",
+			thinkingLevel: "low",
+		});
+		const overridden: UserSettings = {
+			...record,
+			agent: { models: { ask: { model: { provider: "groq", id: "llama" }, thinkingLevel: "high" } } },
+		};
+		assert.deepEqual(resolveRoleSpec("ask", overridden), {
+			provider: "groq",
+			id: "llama",
+			thinkingLevel: "high",
+		});
+		// A thinking-only Ask override keeps the Cheap slot's model and
+		// takes its own level (the slot:false-fallback rule).
+		const thinkingOnly: UserSettings = {
+			...record,
+			agent: { models: { ask: { thinkingLevel: "medium" } } },
+		};
+		assert.deepEqual(resolveRoleSpec("ask", thinkingOnly), {
+			provider: "openrouter",
+			id: "qwen/qwen3.8-flash",
+			thinkingLevel: "medium",
+		});
+		assert.equal(resolveRoleSpec("ask", null), undefined);
+	});
 });
 
 describe("resolveConversationSpec (the turn gate's chain)", () => {

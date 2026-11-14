@@ -7,7 +7,7 @@ import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
 import { buildInfo } from "@/src/core";
-import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { DumbbellIcon, MessageSquareIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -385,6 +385,9 @@ export function SessionRow({
 			{(chat.kind ?? "teach") === "practice" && (
 				<DumbbellIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Practice session" />
 			)}
+			{chat.kind === "ask" && (
+				<MessageSquareIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Ask thread" />
+			)}
 		</button>
 	);
 }
@@ -439,11 +442,18 @@ export function RenameRow({ chat, onCommit, onCancel }: { chat: ChatListItem; on
 	);
 }
 
-/** The three-way kind filter (practice sessions, owner 2026-10-04):
- *  Teaching / All / Practice — a client-side filter over the same
- *  snapshot, persisted in localStorage, defaulting to All. */
-export type SessionKindFilter = "teach" | "all" | "practice";
+/** The four-way kind filter (practice sessions, owner 2026-10-04; Ask
+ *  threads, owner 2026-11): Teaching / Practice / Ask / All — a
+ *  client-side filter over the same snapshot, persisted in localStorage,
+ *  defaulting to All. */
+export type SessionKindFilter = "teach" | "all" | "practice" | "ask";
 const KIND_FILTER_KEY = "lh:session-kind-filter";
+
+/** The filter predicate (pure): absent kind reads as teach, "all" takes
+ *  everything. Exported for the suite's pins. */
+export function matchesKindFilter(chat: { kind?: ChatListItem["kind"] }, filter: SessionKindFilter): boolean {
+	return filter === "all" || (chat.kind ?? "teach") === filter;
+}
 
 function SessionsSidebar() {
 	const { open, toggle, narrow, closeDrawer } = useSidebar();
@@ -452,7 +462,7 @@ function SessionsSidebar() {
 	const [kindFilter, setKindFilter] = useState<SessionKindFilter>("all");
 	useEffect(() => {
 		const stored = window.localStorage.getItem(KIND_FILTER_KEY);
-		if (stored === "teach" || stored === "all" || stored === "practice") setKindFilter(stored);
+		if (stored === "teach" || stored === "all" || stored === "practice" || stored === "ask") setKindFilter(stored);
 	}, []);
 	const setFilter = useCallback((f: SessionKindFilter) => {
 		setKindFilter(f);
@@ -494,7 +504,7 @@ function SessionsSidebar() {
 		const q = query.trim();
 		let list = chats;
 		if (list && kindFilter !== "all") {
-			list = list.filter((c) => (c.kind ?? "teach") === kindFilter);
+			list = list.filter((c) => matchesKindFilter(c, kindFilter));
 		}
 		if (!list) return list;
 		if (!q) return list;
@@ -786,10 +796,10 @@ function SessionsSidebar() {
 					</Hint>
 				</div>
 
-				{/* Two doors, STACKED (owner round 8, 2026-10-05 — was a
-				    half/half row): full-width rows read cleaner and give the
-				    labels room; teaching keeps the original draft route,
-				    practice carries its mode. */}
+				{/* Three doors, STACKED (owner round 8, 2026-10-05 — was a
+				    half/half row; Ask added 2026-11): full-width rows read
+				    cleaner and give the labels room; teaching keeps the
+				    original draft route, practice and Ask carry their mode. */}
 				<div className="mx-3 mb-2 flex flex-col gap-1.5">
 					<button
 						type="button"
@@ -810,6 +820,16 @@ function SessionsSidebar() {
 						<DumbbellIcon className="size-3" />
 						Practice
 						<span className="sr-only">create a new practice session</span>
+					</button>
+					<button
+						type="button"
+						data-testid="new-session-ask"
+						onClick={() => router.push("/chat/new?mode=ask")}
+						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					>
+						<MessageSquareIcon className="size-3" />
+						Ask
+						<span className="sr-only">create a new Ask thread</span>
 					</button>
 				</div>
 
@@ -882,20 +902,20 @@ function SessionsSidebar() {
 				    hatch on the right, mirroring the create-buttons above.
 				    Persisted client-side. */}
 				<div className="mx-3 flex items-center gap-0.5 rounded-md border border-border/60 bg-background p-0.5" data-testid="session-kind-filter">
-					{(["teach", "practice", "all"] as const).map((f) => (
+					{(["teach", "practice", "ask", "all"] as const).map((f) => (
 						<button
 							key={f}
 							type="button"
 							data-testid={`kind-filter-${f}`}
 							onClick={() => setFilter(f)}
 							className={cn(
-								"flex-1 rounded-sm px-2 py-1 text-[11px] uppercase tracking-wider transition-colors",
+								"flex-1 rounded-sm px-1.5 py-1 text-[11px] uppercase tracking-wider transition-colors",
 								kindFilter === f
 									? "bg-accent text-foreground"
 									: "text-muted-foreground hover:text-foreground",
 							)}
 						>
-							{f === "teach" ? "Teaching" : f === "all" ? "All" : "Practice"}
+							{f === "teach" ? "Teaching" : f === "practice" ? "Practice" : f === "ask" ? "Ask" : "All"}
 						</button>
 					))}
 				</div>

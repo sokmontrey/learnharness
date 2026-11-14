@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CornerDownLeftIcon, DumbbellIcon } from "lucide-react";
+import { CornerDownLeftIcon, DumbbellIcon, MessageSquareIcon } from "lucide-react";
 import { GraphView } from "@/components/graph-view";
 import { MinimalHome } from "@/components/minimal-home";
 import { SetupDialog } from "@/components/setup-dialog";
@@ -24,9 +24,14 @@ import { enterSubmits } from "@/src/core";
  */
 export function Home({
 	initialConfigured,
+	initialAskConfigured = false,
 	rendering = true,
 }: {
 	initialConfigured: boolean;
+	/** Ask threads run on their own global role (own override → cheap
+	 *  slot), so their pre-send gate is separate from the three-slot
+	 *  teaching gate. */
+	initialAskConfigured?: boolean;
 	/** GRAPH RENDERING off (owner, 2026-10-06): the home's main view is
 	 * the chains view, not the canvas. Read server-side per navigation —
 	 * changing the setting applies on the next visit home. */
@@ -45,6 +50,7 @@ export function Home({
 	// a topic opens the setup dialog WITH THE DRAFT PRESERVED (Save
 	// stores the slots and the queued message sends).
 	const [configured, setConfigured] = useState(initialConfigured);
+	const [askConfigured, setAskConfigured] = useState(initialAskConfigured);
 	// The zero-keys truth (zero-keys wave): no provider key = the pill
 	// takes precedence over the models CTA (keys come first in the chain).
 	const zeroKeys = useZeroKeys();
@@ -94,7 +100,7 @@ export function Home({
 	 *  may carry proposition picks from the chain table (the chip above
 	 *  the composer opens the picker; the picks seed the opening prompt).
 	 *  Not enforcing any input format — the picks are a convenience. */
-	const [mode, setMode] = useState<"teach" | "practice">("teach");
+	const [mode, setMode] = useState<"teach" | "practice" | "ask">("teach");
 	const [practiceProps, setPracticeProps] = useState<{ id: string; name: string; statement: string }[]>([]);
 	const [chainSelectOpen, setChainSelectOpen] = useState(false);
 	// The chain table is CONTROLLED off this id set (the lifted pick).
@@ -115,9 +121,11 @@ export function Home({
 	const begin = async () => {
 		const t = topicRef.current.trim();
 		if (!t || busy) return;
-		// Unconfigured: the send INTERCEPTS into the setup flow (the draft
-		// stays in the textarea; the learner sends it after Save).
-		if (!configured) {
+		// Ask threads gate on the Ask role (own override → cheap slot), not
+		// the three teaching slots. Unconfigured still intercepts into the
+		// setup flow with the draft preserved.
+		const ask = mode === "ask";
+		if (ask ? !askConfigured : !configured) {
 			setSetupOpen(true);
 			return;
 		}
@@ -127,8 +135,8 @@ export function Home({
 		// chat in the sidebar (the 503 lands only after POST /api/chats
 		// already created the record). Same skip-everything-and-open-setup
 		// treatment; the server's 503 gate remains the belt for /chat/[id]
-		// sessions.
-		if (zeroKeys || strongKeyless) {
+		// sessions. Ask is cheap-tier: the strong-key guard does not apply.
+		if (!ask && (zeroKeys || strongKeyless)) {
 			setSetupOpen(true);
 			return;
 		}
@@ -145,7 +153,8 @@ export function Home({
 				body: JSON.stringify({
 					title: t,
 					...(mode === "practice" ? { kind: "practice" } : {}),
-					...(practiceProps.length > 0 ? { graphContext: { propositions: practiceProps } } : {}),
+					...(mode === "ask" ? { kind: "ask" } : {}),
+					...(mode !== "ask" && practiceProps.length > 0 ? { graphContext: { propositions: practiceProps } } : {}),
 				}),
 			});
 			const { id } = (await res.json()) as { id: string };
@@ -224,7 +233,7 @@ export function Home({
 					    shows the pick HINT so the affordance is discoverable;
 					    teaching mode with nothing picked renders nothing. */}
 					<ComposerActions
-						picker={(practiceProps.length > 0 || mode === "practice") && (
+						picker={mode !== "ask" && (practiceProps.length > 0 || mode === "practice") && (
 							<NodePickerControl
 								count={practiceProps.length}
 								onOpen={() => setChainSelectOpen(true)}
@@ -278,7 +287,7 @@ export function Home({
 								void start();
 							}
 						}}
-						placeholder={mode === "practice" ? "What do you want to practice?" : "What do you want to learn?"}
+						placeholder={mode === "practice" ? "What do you want to practice?" : mode === "ask" ? "What do you want to ask?" : "What do you want to learn?"}
 						autoFocus
 						rows={1}
 						className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
@@ -303,7 +312,7 @@ export function Home({
 						turns={[] as TurnUsage[]}
 						leadingSlot={
 							<div className="flex items-center gap-0.5 rounded-md border border-border/60 bg-background p-0.5" data-testid="home-mode-switch">
-								{(["teach", "practice"] as const).map((m) => (
+								{(["teach", "practice", "ask"] as const).map((m) => (
 									<button
 										key={m}
 										type="button"
@@ -317,7 +326,8 @@ export function Home({
 										}
 									>
 										{m === "practice" ? <DumbbellIcon aria-hidden="true" className="size-3" /> : null}
-										{m === "teach" ? "Teach" : "Practice"}
+										{m === "ask" ? <MessageSquareIcon aria-hidden="true" className="size-3" /> : null}
+										{m === "teach" ? "Teach" : m === "practice" ? "Practice" : "Ask"}
 									</button>
 								))}
 							</div>

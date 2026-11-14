@@ -14,7 +14,7 @@ import React from "react";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SessionRow, timeAgo } from "../components/sidebar.tsx";
+import { SessionRow, matchesKindFilter, timeAgo } from "../components/sidebar.tsx";
 import type { ChatListItem } from "../src/core/index.ts";
 
 function item(overrides: Partial<ChatListItem>): ChatListItem {
@@ -159,5 +159,54 @@ describe("SessionRow practice badge (practice sessions, 2026-10-04)", () => {
 	it("a practice row with a posed problem says the problem is waiting", () => {
 		const html = render(item({ kind: "practice", pendingProblem: true }));
 		assert.match(html, /Problem waiting ·/);
+	});
+});
+
+describe("SessionRow Ask badge (Ask threads, 2026-11)", () => {
+	it("an Ask row carries the message-square badge and its title", () => {
+		const html = render(item({ kind: "ask", title: "Ask: entropy" }));
+		assert.match(html, /aria-label="Ask thread"/);
+		assert.match(html, /Ask: entropy/);
+	});
+
+	it("teaching and practice rows never carry the Ask badge", () => {
+		assert.doesNotMatch(render(item({})), /Ask thread/);
+		assert.doesNotMatch(render(item({ kind: "practice" })), /Ask thread/);
+	});
+
+	it("the kind is read literally on the record (absent reads as teach)", () => {
+		// A legacy record with no kind is a teaching row: neither badge.
+		const legacy = { ...item({}), kind: undefined } as unknown as ChatListItem;
+		const html = render(legacy);
+		assert.doesNotMatch(html, /Ask thread/);
+		assert.doesNotMatch(html, /Practice session/);
+	});
+});
+
+describe("matchesKindFilter — the four-way sidebar filter", () => {
+	it("teach / practice / ask match exactly their kind", () => {
+		assert.equal(matchesKindFilter({ kind: "teach" }, "teach"), true);
+		assert.equal(matchesKindFilter({ kind: "practice" }, "practice"), true);
+		assert.equal(matchesKindFilter({ kind: "ask" }, "ask"), true);
+		for (const [kind, filter] of [
+			["teach", "practice"],
+			["practice", "ask"],
+			["ask", "teach"],
+			["ask", "practice"],
+		] as const) {
+			assert.equal(matchesKindFilter({ kind }, filter), false, `${kind} against ${filter}`);
+		}
+	});
+
+	it("an absent kind reads as teach (legacy records never migrate)", () => {
+		assert.equal(matchesKindFilter({}, "teach"), true);
+		assert.equal(matchesKindFilter({}, "ask"), false);
+		assert.equal(matchesKindFilter({}, "practice"), false);
+	});
+
+	it("all takes every kind, including an absent one", () => {
+		for (const kind of ["teach", "practice", "ask", undefined] as const) {
+			assert.equal(matchesKindFilter({ kind }, "all"), true);
+		}
 	});
 });

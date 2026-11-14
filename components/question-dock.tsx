@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
+import { ArrowDownIcon, ChevronRightIcon, MessageSquareIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
 import { DictationTextarea } from "@/components/dictation-text";
@@ -92,6 +92,9 @@ export interface QuestionDockProps {
 	 *  and say so in the hint row. The server registry is the real gate;
 	 *  this is the affordance. */
 	compactionRunning?: boolean;
+	/** Capture this question prompt as an Ask reference (owner, 2026-11):
+	 *  creates an Ask thread with the prompt pinned. */
+	onAsk?: (text: string) => void;
 }
 
 export function QuestionDock({
@@ -106,6 +109,7 @@ export function QuestionDock({
 	phase = "probe",
 	dictationClaim = true,
 	compactionRunning = false,
+	onAsk,
 }: QuestionDockProps) {
 	// The probe-phase names (owner, 2026-10-09) canonicalize onto their
 	// teach twins for every dock concern — parse dispatch, labels, kinds:
@@ -160,6 +164,7 @@ export function QuestionDock({
 					onEscape={onEscape}
 					dictationClaim={dictationClaim}
 					compactionRunning={compactionRunning}
+					onAsk={onAsk}
 				/>
 			</div>
 		</>
@@ -244,6 +249,15 @@ export function QuestionDockBar({
 	);
 }
 
+/** The verbatim prompt an Ask pin carries: the question, its context, and
+ *  any option labels (a "why is this the answer" question needs them). */
+function askTextForQuestion(qd: QuestionData): string {
+	const parts = [qd.question];
+	if (qd.context) parts.push(qd.context);
+	if (qd.options.length > 0) parts.push(qd.options.map((opt, i) => `${i + 1}. ${opt.label}`).join("\n"));
+	return parts.join("\n\n");
+}
+
 /** The expanded question: label, question, options, and the unified bottom row. */
 function QuestionDockForm({
 	toolName,
@@ -255,6 +269,7 @@ function QuestionDockForm({
 	onEscape,
 	dictationClaim = true,
 	compactionRunning = false,
+	onAsk,
 }: Omit<QuestionDockProps, "expanded" | "onExpand" | "reveal">) {
 	const kind = toolQuestionKind(toolName);
 
@@ -547,19 +562,34 @@ function QuestionDockForm({
 			    Capped by the measured column (--dock-max-h; the old fixed 55dvh cut
 			    long questions short — owner round, 2026-10-05). */}
 			<div data-session-find-root="" className="max-h-[var(--dock-max-h,55dvh)] overflow-y-auto px-4 pt-3">
-				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-					{toolName === "probe"
-						? "Probe"
-						: toolName === "recall"
-							? "Recall"
-							: kind === "quiz"
-								? qd.questionType === "predict"
-									? "Prediction"
-									: "Check"
-									: kind === "explain"
-										? "Explain"
-											: "Question"}
-					{qd.mode === "multi-select" && " · select all that apply"}
+				<div className="mb-1 flex items-center gap-2">
+					<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						{toolName === "probe"
+							? "Probe"
+							: toolName === "recall"
+								? "Recall"
+								: kind === "quiz"
+									? qd.questionType === "predict"
+										? "Prediction"
+										: "Check"
+										: kind === "explain"
+											? "Explain"
+												: "Question"}
+						{qd.mode === "multi-select" && " · select all that apply"}
+					</div>
+					{onAsk && (
+						<button
+							type="button"
+							data-testid="question-ask-button"
+							title="Ask about this question"
+							aria-label="Ask about this question"
+							onClick={() => onAsk(askTextForQuestion(qd))}
+							className="ml-auto flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+						>
+							<MessageSquareIcon className="size-3" />
+							Ask
+						</button>
+					)}
 				</div>
 				<div className="mb-3 font-medium">
 					<MessageResponse>{qd.question}</MessageResponse>

@@ -24,8 +24,10 @@ import type { EmissionStats } from "./graph.ts";
 /** The session's kind (practice sessions, owner 2026-10-04): "teach" is
  *  the default and ABSENT on pre-practice records (no migration — absence
  *  reads as teach); "practice" marks an adaptive-practice session — the
- *  practice agent, its two tools, no extraction, no graph writes. */
-export type ChatKind = "teach" | "practice";
+ *  practice agent, its two tools, no extraction, no graph writes. "ask"
+ *  marks a persistent Ask thread: a lean Q&A surface linked to one or more
+ *  teaching/practice sessions (owner, 2026-11). */
+export type ChatKind = "teach" | "practice" | "ask";
 
 export interface ChatRecord {
 	id: string;
@@ -35,6 +37,11 @@ export interface ChatRecord {
 	messages: LhMessage[];
 	/** The session's kind — absent = teach (pre-practice records). */
 	kind?: ChatKind;
+	/** Ask-thread context (owner, 2026-11): the teaching/practice sessions
+	 *  this thread draws on, the passages/turns the learner pinned, and the
+	 *  per-answer log of which references were retrieved. Only meaningful on
+	 *  kind:"ask" records; absent on every other kind. */
+	ask?: AskContext;
 	/** The session's plan tree (vision §2) — written by plan tools via saveTree. */
 	tree?: PlanTree;
 	/** Append-only usage log (observability, 2026-09): one entry per model
@@ -62,6 +69,82 @@ export interface ChatRecord {
 
 /** The chat record format this build writes and understands. */
 export const CURRENT_CHAT_VERSION = 1;
+
+// ─── Ask threads (owner, 2026-11) ────────────────────────────────────────────
+
+/** One linked source session. Links are whole-session: the Ask turn's
+ *  retrieval may read any turn of a linked transcript, never the whole
+ *  transcript at once. */
+export interface AskLink {
+	chatId: string;
+	linkedAt: string;
+}
+
+/** A pinned passage/turn — the exact reference the learner attached. The
+ *  pin always carries its source turn ids (retrieval includes those turns
+ *  plus one neighbor each side) and the verbatim text shown in the chip. */
+export interface AskPin {
+	id: string;
+	chatId: string;
+	/** The source turn's message ids (one learner+assistant pair). */
+	messageIds: string[];
+	/** The selected passage, or the question/prompt text that was pinned. */
+	text: string;
+	/** Optional display label ("Quiz question", the session title, …). */
+	label?: string;
+	createdAt: string;
+}
+
+/** One reference actually placed in an Ask answer's context. */
+export interface AskUsedRef {
+	chatId: string;
+	messageIds: string[];
+}
+
+/** One answer's retrieval log — keyed by the assistant message that answered.
+ *  Drives the transcript indicator's "used" state and click-through. */
+export interface AskUsage {
+	messageId: string;
+	used: AskUsedRef[];
+	at: string;
+}
+
+/** The persisted Ask-thread context. Arrays are always present in writes;
+ *  the read side treats absent arrays as empty (delta discipline). */
+export interface AskContext {
+	links?: AskLink[];
+	pins?: AskPin[];
+	usages?: AskUsage[];
+}
+
+/** A link resolved for display by the Ask surface: a deleted source stays
+ *  visible as a removable chip instead of silently disappearing. */
+export interface AskLinkView extends AskLink {
+	title: string;
+	missing: boolean;
+}
+
+/** The Ask surface's resolved context: linked sessions with titles, and the
+ *  thread's pinned passages. Produced server-side by askContextView; the
+ *  shell type lives here so components import it from the core barrel. */
+export interface AskContextView {
+	links: AskLinkView[];
+	pins: AskPin[];
+}
+
+/** One indicator reference returned by GET /api/chats/[id]/ask-refs: a
+ *  referring Ask thread pointing at source message ids. `reason` says why
+ *  this thread touches the turn — pinned by the learner, or retrieved into
+ *  an answer's context. `answerMessageId` is the Ask answer to open (only
+ *  for used refs; a pin without a used answer opens the thread at the end). */
+export interface AskThreadRef {
+	askChatId: string;
+	askTitle: string;
+	sourceChatId: string;
+	messageIds: string[];
+	reason: "pinned" | "used";
+	answerMessageId?: string;
+}
 
 /** The conversation agents' runtime model choice (model-control wave,
  *  2026-09-12): a per-chat override of config.ts's pinned prober/teacher

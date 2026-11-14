@@ -134,6 +134,29 @@ export function composeGraphTools(agent: AgentSettings | undefined, on: boolean)
 	return { ...agent, graphTools: { enabled: on } };
 }
 
+/** Compose the Ask role override (owner, 2026-11): the dedicated global
+ *  model/thinking for Ask threads, stored at agent.models.ask. Absent =
+ *  the role resolves through the Cheap slot (ROLE_SLOT.ask). Pure —
+ *  exported for tests. */
+export function composeAskModel(
+	agent: AgentSettings | undefined,
+	provider: string,
+	id: string,
+	thinking: string,
+): AgentSettings {
+	const prev = agent?.models?.ask;
+	const models = { ...agent?.models };
+	if (!provider && !id && !thinking) {
+		delete models.ask;
+	} else {
+		models.ask = {
+			...(provider && id ? { model: { provider, id } } : prev?.model ? { model: prev.model } : {}),
+			...(thinking ? { thinkingLevel: thinking as ThinkingLevel } : {}),
+		};
+	}
+	return { ...agent, models };
+}
+
 /** Compose: one slot's model/thinking override. Empty model = absent
  *  override (Default — falls to the factory pin); empty thinking = the
  *  tier keeps its resolved thinking budget. Per-field independence, same
@@ -319,7 +342,7 @@ export function AgentSection({
 	const [segmentStatus, setSegmentStatus] = useState<string | null>(null);
 	/** One open dropdown for the whole section: which slot (or the search
 	 *  row), which kind. */
-	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "fast" | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
+	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "fast" | "ask" | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
 	const menuAnchorRef = useRef<HTMLSpanElement>(null);
 
 	const refreshSearch = () =>
@@ -724,6 +747,96 @@ export function AgentSection({
 						</SettingsRow>
 					);
 				})}
+				{(() => {
+					// The Ask role's own row (owner, 2026-11): out of the slot
+					// ladder so slotsConfigured is unchanged. With no override the
+					// triggers DISPLAY the effective Cheap-slot pair — the row
+					// explains what Ask actually runs, not a misleading "—".
+					const override = agent?.models?.ask;
+					const coord = override?.model ?? slots?.cheap?.model;
+					const modelId = coord?.id ?? "";
+					const provider = coord?.provider ?? "";
+					// The row may be SHOWING the Cheap-slot fallback while nothing
+					// is overridden. A thinking-only pick must not silently pin
+					// that fallback model — pass the override's own coordinates
+					// (empty when none), exactly like the slot rows.
+					const ownProvider = override?.model?.provider ?? "";
+					const ownModelId = override?.model?.id ?? "";
+					const thinking = override?.thinkingLevel ?? "";
+					const chosen = coord ? catalog?.find((m) => m.id === coord.id && m.provider === coord.provider) : undefined;
+					const levels = chosen ? chosen.supportedLevels : THINKING_LEVELS;
+					const thisMenuOpen = openMenu?.target === "ask" ? openMenu.kind : null;
+					return (
+						<SettingsRow
+							label="Ask"
+							hint="Answers about your sessions — falls back to the Cheap slot"
+							testid="slot-row-ask"
+						>
+							<span
+								ref={thisMenuOpen ? menuAnchorRef : undefined}
+								className="relative flex items-center gap-2"
+							>
+								<ChatGPTBackgroundAccess provider={provider} />
+								<NativeSubscriptionBackgroundAccess provider={provider} />
+								<MenuTrigger
+									value={modelId ? prettyModel(modelId) : ""}
+									emptyLabel="—"
+									ariaLabel="Ask model"
+									testid="slot-model-ask"
+									open={thisMenuOpen === "model"}
+									onClick={() => setOpenMenu(thisMenuOpen === "model" ? null : { target: "ask", kind: "model" })}
+									widthClass="min-w-20"
+								/>
+								<MenuTrigger
+									value={thinking || (chosen ? defaultOrderLevel(levels) : "")}
+									emptyLabel="—"
+									ariaLabel="Ask thinking"
+									testid="slot-thinking-ask"
+									open={thisMenuOpen === "thinking"}
+									onClick={() => setOpenMenu(thisMenuOpen === "thinking" ? null : { target: "ask", kind: "thinking" })}
+									widthClass="w-20"
+								/>
+								{thisMenuOpen === "model" && (
+									<MenuShell
+										preferredSide="down"
+										anchorTestid="slot-model-ask"
+										testid="slot-model-menu-ask"
+										menuClass="flex w-[22rem] flex-col rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
+									>
+										<ModelMenuList
+											models={catalog ?? undefined}
+											effectiveId={modelId}
+											effectiveProvider={provider}
+											onPick={(entry) => {
+												const next = populateLevel(thinking || undefined, entry.supportedLevels);
+												onSectionChange(composeAskModel(agent, entry.provider, entry.id, next));
+												setOpenMenu(null);
+											}}
+											footer={catalog && catalog.length === 0 ? "No models — add a provider key in Keys" : "Runs one fast Ask call per question"}
+										/>
+									</MenuShell>
+								)}
+								{thisMenuOpen === "thinking" && (
+									<MenuShell
+										preferredSide="down"
+										anchorTestid="slot-thinking-ask"
+										testid="slot-thinking-menu-ask"
+										menuClass="flex w-44 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
+									>
+										<ThinkingMenuList
+											levels={levels.map(String)}
+											effectiveLevel={thinking || (chosen ? defaultOrderLevel(levels) : undefined)}
+											onPick={(level) => {
+												onSectionChange(composeAskModel(agent, ownProvider, ownModelId, level));
+												setOpenMenu(null);
+											}}
+										/>
+									</MenuShell>
+								)}
+							</span>
+						</SettingsRow>
+					);
+				})()}
 			</SettingsGroup>
 
 			<SettingsGroup label="Tools" testid="group-tools">

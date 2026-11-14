@@ -51,6 +51,7 @@ import { catalogContextLimits, refreshConnectionCatalog } from "./model-catalog.
 import { emit } from "../core/events.ts";
 import { settledTurnResponse } from "./turn-runs.ts";
 import { asAgentMessages } from "../core/native-messages.ts";
+import { handleAskInput } from "./ask-turn.ts";
 import {
 	ChatInputError,
 	inputAppends,
@@ -180,6 +181,14 @@ export async function handleChatInput(
 	let record = stores.chatStore.getChat(chatId);
 	if (!record) {
 		return Response.json({ error: "Unknown chat" }, { status: 404 });
+	}
+
+	// ASK BRANCH (owner, 2026-11): an Ask thread is a lean Q&A surface —
+	// its own global model role, retrieval context, no compaction, no
+	// extraction, no tools. Intercept BEFORE the strong-slot gate so an Ask
+	// turn never needs the conversation model (cheap tier is enough).
+	if (record.kind === "ask") {
+		return handleAskInput(chatId, record, input, effectiveSettings(), buildAgent);
 	}
 
 	// THE UNIVERSAL TURN GATE (BYOK, owner, 2026-09-22): a turn needs the

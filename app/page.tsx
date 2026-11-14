@@ -12,11 +12,16 @@ export default function HomePage() {
 	// has picked all three slots — the dock shows the CTA while the raw
 	// record's models section lacks any slot pin.
 	const record = readSettingsRecord();
+	const resolved = resolveSettings(record ?? null);
 	// GRAPH RENDERING (owner, 2026-10-06): off = the home's main view is
 	// the chains view. Resolved through the one core resolver (missing
 	// section / absent key → factory default on); re-read per navigation.
-	const rendering = resolveSettings(record ?? null).graph.rendering;
+	const rendering = resolved.graph.rendering;
 	return (
-		<Home initialConfigured={slotsConfigured(record?.models)} rendering={rendering} />
+		<Home
+			initialConfigured={slotsConfigured(record?.models)}
+			initialAskConfigured={Boolean(resolved.agent.models.ask)}
+			rendering={rendering}
+		/>
 	);
 }

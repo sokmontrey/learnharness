@@ -10,6 +10,7 @@ import { describe, it } from "node:test";
 import { appearanceVars, derivedPalette, resolveAppearance, staleVarNames } from "../components/settings/appearance.tsx";
 import {
 	PROMPT_IN_USE_HINT,
+	composeAskModel,
 	composePromptSwitch,
 	composeSearchEngine,
 	composeSlotModel,
@@ -181,6 +182,30 @@ describe("agent section compose helpers — the replace-whole PUT body", () => {
 		// clearing thinking keeps the model
 		const after2 = composeSlotModel(prev, "strong", "zai", "glm-4.7-flash", "");
 		assert.deepEqual(after2.strong, { model: { provider: "zai", id: "glm-4.7-flash" } }, "thinking dropped, model kept");
+	});
+
+	it("composeAskModel: empty+empty REMOVES the Ask override (falls to the Cheap slot)", () => {
+		const after = composeAskModel({ models: { ask: { model: { provider: "zai", id: "x" } } } }, "", "", "");
+		assert.equal(after.models?.ask, undefined, "override dropped");
+	});
+
+	it("composeAskModel: model alone, thinking alone, and both", () => {
+		assert.deepEqual(composeAskModel(undefined, "groq", "llama", "").models?.ask, {
+			model: { provider: "groq", id: "llama" },
+		});
+		// thinking-only keeps an existing override model — and adds none.
+		assert.deepEqual(composeAskModel(undefined, "", "", "low").models?.ask, { thinkingLevel: "low" });
+		assert.deepEqual(composeAskModel(undefined, "openai", "gpt-5.2", "high").models?.ask, {
+			model: { provider: "openai", id: "gpt-5.2" },
+			thinkingLevel: "high",
+		});
+	});
+
+	it("composeAskModel: carrying the rest of the agent section verbatim", () => {
+		const before: AgentSettings = { tools: { demo: false }, prompts: { "system-prompt.md": true } };
+		const after = composeAskModel(before, "groq", "llama", "");
+		assert.deepEqual(after.tools, { demo: false });
+		assert.deepEqual(after.prompts, { "system-prompt.md": true });
 	});
 
 	it("composeSearchEngine: null REMOVES the pin (auto-activation's resting state)", () => {

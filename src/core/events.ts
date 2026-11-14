@@ -48,6 +48,10 @@ export interface ServerEvents {
 	 *  the chat; the client mirrors it by disabling the composer/dock
 	 *  submit. */
 	"compaction-changed": { chatId: string; running: boolean };
+	/** An Ask thread's references to a source transcript changed (link,
+	 *  pin, unpin, or a new answer's usage). chatId = the SOURCE session, so
+	 *  its open transcript refetches ask-refs. */
+	"ask-refs-changed": { chatId: string };
 }
 
 export type ServerEventType = keyof ServerEvents;
@@ -63,6 +67,7 @@ export const SERVER_EVENT_TYPES = [
 	"chats-changed",
 	"record-changed",
 	"compaction-changed",
+	"ask-refs-changed",
 ] as const satisfies readonly ServerEventType[];
 
 /** One notification: the type discriminates the payload. */
