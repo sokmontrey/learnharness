@@ -52,6 +52,7 @@ import {
 	validateKeyShape,
 } from "../core/auth-keys.ts";
 import { authStore } from "../store/auth.ts";
+import { openAICompatibleStore } from "../store/openai-compatible.ts";
 import { isSubscriptionProvider, subscriptionConnected } from "../agent/subscription-connections.ts";
 
 // The once-per-process boot record — globalThis anchor (HMR re-imports the
@@ -75,7 +76,8 @@ function boot(): AuthBoot {
 /** Is `id` a WRITABLE key name — curated catalog or model-provider env
  *  var (provider-keys interlude: PUT/DELETE accept both). */
 export function isWritableAuthKey(id: string): boolean {
-	return isKnownAuthKey(id) || isProviderEnvVar(id);
+	if (isKnownAuthKey(id) || isProviderEnvVar(id)) return true;
+	return openAICompatibleStore.list().some((e) => e.envVar === id);
 }
 
 /** The settings page's provider dropdown: every pi-ai provider that takes
@@ -83,7 +85,9 @@ export function isWritableAuthKey(id: string): boolean {
  *  in core/auth-keys.ts and tests/auth-provider-keys.test.ts). Sorted by
  *  id for a stable payload. */
 export function providerKeyList() {
-	return [...AUTH_PROVIDER_KEYS].sort((a, b) => a.id.localeCompare(b.id));
+	const base = [...AUTH_PROVIDER_KEYS].map((p) => ({ id: p.id, envVar: p.envVar, label: p.label }));
+	const custom = openAICompatibleStore.list().map((e) => ({ id: e.id, envVar: e.envVar, label: e.label }));
+	return [...base, ...custom].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** The fresh-user switch (owner, interlude 2026-09-22): env keys are
@@ -109,6 +113,7 @@ export function initAuthEnv(): void {
 		// an env-exported OPENAI_API_KEY with a file copy gets honest shadow
 		// semantics, exactly like the curated vars.
 		...AUTH_PROVIDER_KEYS.map((p) => p.envVar),
+		...openAICompatibleStore.list().map((e) => e.envVar),
 	]);
 	if (envKeysIgnored()) {
 		// THE FRESH-USER SWITCH: delete every managed env var (re-run on

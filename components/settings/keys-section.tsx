@@ -327,6 +327,10 @@ export function KeysSection({
 	const [statuses, setStatuses] = useState<AuthKeyStatus[] | null>(null);
 	const [providers, setProviders] = useState<ProviderKeyInfo[] | undefined>(undefined);
 	const [loading, setLoading] = useState(true);
+	const [compatEndpoints, setCompatEndpoints] = useState<Array<{ id: string; label: string; baseUrl: string; envVar: string }>>([]);
+	const [compatLabel, setCompatLabel] = useState("");
+	const [compatUrl, setCompatUrl] = useState("");
+	const [compatBusy, setCompatBusy] = useState(false);
 	/** The unfolded row (its id), null = all folded. Seeded by the
 	 *  deep-link (initialRow) and re-followed when it retargets. */
 	const [openRow, setOpenRow] = useState<string | null>(initialRow ?? null);
@@ -352,14 +356,15 @@ export function KeysSection({
 	}, [openRow, adding]);
 
 	const reload = () =>
-		fetch("/api/keys")
-			.then((r) => r.json())
-			.then((body: KeysResponse) => {
+		Promise.all([
+			fetch("/api/keys").then((r) => r.json()).then((body: KeysResponse) => {
 				setStatuses(body.keys ?? []);
 				if (body.providers) setProviders(body.providers);
-			})
-			.catch(() => setStatuses([]))
-			.finally(() => setLoading(false));
+			}).catch(() => setStatuses([])),
+			fetch("/api/openai-compatible").then((r) => r.json()).then((body: { endpoints?: Array<{ id: string; label: string; baseUrl: string; envVar: string }> }) => {
+				setCompatEndpoints(body.endpoints ?? []);
+			}).catch(() => setCompatEndpoints([])),
+		]).finally(() => setLoading(false));
 
 	useEffect(() => {
 		void reload();
@@ -455,6 +460,47 @@ export function KeysSection({
 				</div>}
 			</SettingsGroup>
 
+			<SettingsGroup label="OpenAI-compatible endpoints" testid="group-openai-compatible">
+				{compatEndpoints.map((ep) => (
+					<div key={ep.id} className="flex items-center justify-between gap-3 px-1 py-1.5" data-testid={`compat-${ep.id}`}>
+						<span className="font-ui text-xs text-foreground">{ep.label}</span>
+						<span className="font-mono text-[11px] text-muted-foreground">{ep.baseUrl}</span>
+						<button
+							type="button"
+							data-testid={`compat-${ep.id}-delete`}
+							onClick={async () => {
+								await fetch("/api/openai-compatible", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: ep.id }) });
+								await reload();
+								notifySettingsSaved("keys");
+							}}
+							className="text-xs text-muted-foreground/70 hover:text-red-500"
+						>
+							Delete
+						</button>
+					</div>
+				))}
+				<div className="flex items-center gap-2 px-1 py-1.5">
+					<input value={compatLabel} onChange={(e) => setCompatLabel(e.target.value)} placeholder="Label (e.g. Radium)" className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 text-xs" data-testid="compat-label" />
+					<input value={compatUrl} onChange={(e) => setCompatUrl(e.target.value)} placeholder="https://api.radium.cloud/v1" className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 text-xs" data-testid="compat-url" />
+					<button
+						type="button"
+						disabled={compatBusy || !compatLabel.trim() || !compatUrl.trim()}
+						data-testid="compat-add"
+						onClick={async () => {
+							setCompatBusy(true);
+							await fetch("/api/openai-compatible", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: compatLabel, baseUrl: compatUrl }) });
+							setCompatLabel("");
+							setCompatUrl("");
+							await reload();
+							notifySettingsSaved("keys");
+							setCompatBusy(false);
+						}}
+						className="text-xs text-foreground underline-offset-2 hover:underline disabled:text-muted-foreground/40"
+					>
+						Add
+					</button>
+				</div>
+			</SettingsGroup>
 			<SettingsGroup label="Subscriptions" testid="group-subscriptions">
 				<SubscriptionConnections />
 			</SettingsGroup>

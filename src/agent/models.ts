@@ -1,6 +1,7 @@
 import {
 	clampThinkingLevel,
 	createModels,
+	createProvider,
 	getSupportedThinkingLevels,
 	type Api,
 	type Model,
@@ -8,6 +9,7 @@ import {
 	type StreamFunction,
 } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import { stream as openaiResponsesStream, streamSimple as openaiResponsesStreamSimple } from "@earendil-works/pi-ai/api/openai-responses";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type ModelRole } from "../../config.ts";
 import { DEFAULT_THINKING_ORDER } from "../core/settings.ts";
@@ -48,7 +50,65 @@ export interface PiEngine {
 
 export type { ThinkingLevel };
 
+import { openAICompatibleStore } from "../store/openai-compatible.ts";
+
 let collection: ReturnType<typeof createModels> | undefined;
+
+/** Reconcile the collection with the persisted custom OpenAI-compatible
+ *  endpoints: register new ones, drop removed ones. */
+export function syncOpenAICompatibleProviders(endpoints?: ReturnType<typeof openAICompatibleStore.list>) {
+	const list = endpoints ?? openAICompatibleStore.list();
+	const models = piModels();
+	// Remove custom providers no longer present.
+	for (const p of models.getProviders()) {
+		if (list.some((e) => e.id === p.id)) continue;
+		// Heuristic: custom provider ids are not builtin ids.
+		if (!builtinProviders().some((b) => b.id === p.id)) {
+			models.deleteProvider(p.id);
+		}
+	}
+	for (const ep of list) {
+		const provider = createProvider({
+			id: ep.id,
+			name: ep.label,
+			baseUrl: ep.baseUrl,
+			auth: {
+				name: `${ep.label} API key`,
+				resolve: async ({ credential }: any) => {
+					const key = credential?.key ?? process.env[ep.envVar];
+					if (!key) return undefined;
+					return { auth: { apiKey: key, baseUrl: ep.baseUrl }, source: ep.envVar };
+				},
+			} as any,
+			models: [],
+			api: { stream: openaiResponsesStream, streamSimple: openaiResponsesStreamSimple },
+			fetchModels: async (context: any) => {
+				const apiKey = context?.credential?.type === "apiKey" ? context.credential.key : process.env[ep.envVar];
+				const res = await fetch(`${ep.baseUrl.replace(/\/$/, "")}/models`, {
+					headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+					signal: context?.signal,
+				});
+				if (!res.ok) return [];
+				const json = await res.json().catch(() => ({}));
+				const data = Array.isArray(json?.data) ? json.data : [];
+				return data.map((m: any) => ({
+					id: String(m.id),
+					name: String(m.id),
+					api: "openai-responses",
+					provider: ep.id,
+					baseUrl: ep.baseUrl,
+					reasoning: false,
+					input: ["text"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: 128000,
+					maxTokens: 4096,
+					type: "chat",
+				}));
+			},
+		});
+		models.setProvider(provider);
+	}
+}
 
 /** The process-wide pi-ai Models collection — EVERY builtin provider's
  *  catalog (model slots wave, 2026-09-20): engines and the picker resolve
@@ -62,6 +122,7 @@ export function piModels() {
 	if (!collection) {
 		collection = createModels({ identity: APP_IDENTITY });
 		for (const provider of builtinProviders()) collection.setProvider(provider);
+		syncOpenAICompatibleProviders();
 	}
 	return collection;
 }

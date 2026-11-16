@@ -48,6 +48,7 @@ import type {
 } from "../core/contracts/models.ts";
 import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolution.ts";
 import { AUTH_PROVIDER_KEYS } from "../core/auth-keys.ts";
+import { openAICompatibleStore } from "../store/openai-compatible.ts";
 import { BACKGROUND_MODEL_ROLES, STORED_MODEL_SLOTS, type BackgroundModelRole, type ModelsSettings } from "../core/settings.ts";
 
 /** The picker's client-safe model entry (contract: core/contracts/models.ts). */
@@ -139,7 +140,9 @@ export function catalogProviders(): CatalogProvider[] {
 		id: p.id,
 		envVar: p.envVar,
 		keyPresent: keyValue(p.envVar) !== undefined,
-	})).concat([
+	})).concat(
+		openAICompatibleStore.list().map((e) => ({ id: e.id, envVar: e.envVar, keyPresent: keyValue(e.envVar) !== undefined })),
+	).concat([
 		{ id: "chatgpt", envVar: "", keyPresent: chatGPTConnected() },
 		...NATIVE_SUBSCRIPTIONS.map((p) => ({ id: p.logicalId, envVar: "", keyPresent: nativeSubscriptionConnected(p.providerId) })),
 	]).sort((a, b) => a.id.localeCompare(b.id));
