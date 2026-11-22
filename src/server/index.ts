@@ -47,3 +47,4 @@ export * from "./model-catalog.ts";
 export { sessionCost } from "./pricing.ts";
 export { repairDictation } from "./dictation-post.ts";
 export * from "./explain.ts";
+export * from "./infer-meaning.ts";

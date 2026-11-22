@@ -1,16 +1,20 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { PlayIcon, SquareIcon, SkipForwardIcon, Volume2Icon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LightbulbIcon, PlayIcon, SquareIcon, SkipForwardIcon, Volume2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { ListeningTypedField } from "@/components/listening-typed-field";
-import { createTtsProvider, TTS_NORMAL_RATE, TTS_SLOW_RATE } from "@/lib/tts";
+import { createTtsProvider, TTS_NORMAL_RATE } from "@/lib/tts";
+
+/** Study pace for the listening dock — slower than transcript read-aloud (0.85). */
+const LISTENING_SLOW_RATE = 0.62;
 import {
 	buildListeningAnswer,
 	dismissedAnswer,
 	parseListeningInput,
 	scoreListening,
+	tokenizeListening,
 	type QuestionAnswerData,
 } from "@/src/core";
 
@@ -24,14 +28,19 @@ export function ListeningDock({
 	onSubmit,
 	onEscape,
 	compactionRunning,
+	mode = "agent",
+	onManualDone,
 }: {
-	toolCallId: string;
+	toolCallId?: string;
 	input: unknown;
 	expanded: boolean;
 	onExpand: () => void;
-	onSubmit: (answer: QuestionAnswerData) => void;
+	onSubmit?: (answer: QuestionAnswerData) => void;
 	onEscape?: () => void;
 	compactionRunning: boolean;
+	/** Agent dock posts an answer; manual practice closes locally only. */
+	mode?: "agent" | "manual";
+	onManualDone?: () => void;
 }) {
 	const parsed = useMemo(() => parseListeningInput(input), [input]);
 	const targetText = parsed?.targetText ?? "";
@@ -42,9 +51,22 @@ export function ListeningDock({
 	const [speaking, setSpeaking] = useState(false);
 	const [slow, setSlow] = useState(slowDefault);
 	const [keyNeeded, setKeyNeeded] = useState(false);
+	const [hintWordsRevealed, setHintWordsRevealed] = useState(0);
 	const lastPlayRef = useRef(0);
 
+	const targetWords = useMemo(() => tokenizeListening(targetText), [targetText]);
+	const hintsExhausted = hintWordsRevealed >= targetWords.length;
+
+	useEffect(() => {
+		setHintWordsRevealed(0);
+	}, [targetText]);
+
 	const score = useMemo(() => scoreListening(targetText, typed), [targetText, typed]);
+
+	const revealNextHint = useCallback(() => {
+		if (hintsExhausted) return;
+		setHintWordsRevealed((n) => Math.min(n + 1, targetWords.length));
+	}, [hintsExhausted, targetWords.length]);
 
 	const play = useCallback(
 		(useSlow: boolean) => {
@@ -54,7 +76,7 @@ export function ListeningDock({
 			lastPlayRef.current = Date.now();
 			tts.speak(targetText, {
 				lang: "fr",
-				rate: useSlow ? TTS_SLOW_RATE : TTS_NORMAL_RATE,
+				rate: useSlow ? LISTENING_SLOW_RATE : TTS_NORMAL_RATE,
 				onEnd: () => setSpeaking(false),
 				onError: (kind) => {
 					setSpeaking(false);
@@ -70,16 +92,28 @@ export function ListeningDock({
 		setSpeaking(false);
 	}, []);
 
+	const finishManual = useCallback(() => {
+		onManualDone?.();
+	}, [onManualDone]);
+
 	const submit = useCallback(() => {
 		if (compactionRunning || !targetText) return;
-		onSubmit(buildListeningAnswer(targetText, contextText, typed));
-	}, [compactionRunning, contextText, onSubmit, targetText, typed]);
+		if (mode === "manual") {
+			finishManual();
+			return;
+		}
+		onSubmit?.(buildListeningAnswer(targetText, contextText, typed));
+	}, [compactionRunning, contextText, finishManual, mode, onSubmit, targetText, typed]);
 
 	const skip = useCallback(() => {
 		if (compactionRunning) return;
+		if (mode === "manual") {
+			finishManual();
+			return;
+		}
 		const label = contextText?.trim() || "Listening practice";
-		onSubmit(dismissedAnswer("listening", label));
-	}, [compactionRunning, contextText, onSubmit]);
+		onSubmit?.(dismissedAnswer("listening", label));
+	}, [compactionRunning, contextText, finishManual, mode, onSubmit]);
 
 	if (!parsed) {
 		return (
@@ -107,7 +141,9 @@ export function ListeningDock({
 	return (
 		<div className="flex flex-col gap-0" data-testid="listening-dock">
 			<div className="border-b border-border/60 px-4 py-3">
-				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Listening</div>
+				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+					{mode === "manual" ? "Listening (your pick)" : "Listening"}
+				</div>
 				{contextText ? (
 					<div className="text-sm">
 						<MessageResponse>{contextText}</MessageResponse>
@@ -124,10 +160,23 @@ export function ListeningDock({
 
 			<div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2.5">
 				{speaking ? (
-					<Button type="button" variant="secondary" size="sm" onClick={stop} data-testid="listening-stop">
-						<SquareIcon className="size-3.5" />
-						Stop
-					</Button>
+					<>
+						<Button type="button" variant="secondary" size="sm" onClick={stop} data-testid="listening-stop">
+							<SquareIcon className="size-3.5" />
+							Stop
+						</Button>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							disabled={compactionRunning || hintsExhausted || targetWords.length === 0}
+							onClick={revealNextHint}
+							data-testid="listening-hint"
+						>
+							<LightbulbIcon className="size-3.5" />
+							Hint
+						</Button>
+					</>
 				) : (
 					<>
 						<Button type="button" variant="secondary" size="sm" onClick={() => play(false)} data-testid="listening-play">
@@ -138,12 +187,46 @@ export function ListeningDock({
 							<Volume2Icon className="size-3.5" />
 							Slow
 						</Button>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							disabled={compactionRunning || hintsExhausted || targetWords.length === 0}
+							onClick={revealNextHint}
+							data-testid="listening-hint"
+						>
+							<LightbulbIcon className="size-3.5" />
+							Hint
+						</Button>
 					</>
 				)}
 				<span className="ml-auto font-mono text-xs tabular-nums text-muted-foreground">
 					{Math.round(score.tokenScore * 100)}% tokens
 				</span>
 			</div>
+
+			{hintWordsRevealed > 0 && (
+				<div
+					className="border-b border-border/60 px-4 py-2.5 font-mono text-sm leading-relaxed"
+					data-testid="listening-hints"
+					aria-live="polite"
+				>
+					<span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Hints</span>
+					<span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+						{targetWords.map((word, i) =>
+							i < hintWordsRevealed ? (
+								<span key={i} className="text-foreground">
+									{word}
+								</span>
+							) : (
+								<span key={i} className="select-none text-muted-foreground/50" aria-hidden>
+									█
+								</span>
+							),
+						)}
+					</span>
+				</div>
+			)}
 
 			<div className="px-4 py-3">
 				<label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">

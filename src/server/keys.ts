@@ -184,7 +184,9 @@ export function resolveKeyStatuses(
 
 /** The GET view: every curated key (present or not) + unknown file vars. */
 export function keyStatuses(): AuthKeyStatus[] {
-	return resolveKeyStatuses(authStore.authVars(), process.env, boot().realEnv, AUTH_PROVIDER_ENV_VARS);
+	const customEnv = new Set(openAICompatibleStore.list().map((e) => e.envVar));
+	const combined = new Set([...AUTH_PROVIDER_ENV_VARS, ...customEnv]);
+	return resolveKeyStatuses(authStore.authVars(), process.env, boot().realEnv, combined);
 }
 
 /** The live value for one var, env-first (the env-wins rule) — the canonical
@@ -218,7 +220,8 @@ export function providerKeyPresent(provider: string): boolean {
  * reports shadowedByEnv so the page can explain it).
  */
 export function saveKey(id: string, value: string): { ok: true; status: AuthKeyStatus } | { ok: false; error: string } {
-	const shape = isProviderEnvVar(id) ? genericProviderKeyGuard(id, value) : validateKeyShape(id, value);
+	const isCustom = openAICompatibleStore.list().some((e) => e.envVar === id);
+	const shape = (isProviderEnvVar(id) || isCustom) ? genericProviderKeyGuard(id, value) : validateKeyShape(id, value);
 	if (!shape.ok) return { ok: false, error: shape.error };
 	const trimmed = value.trim();
 	authStore.setAuthVar(id, trimmed);

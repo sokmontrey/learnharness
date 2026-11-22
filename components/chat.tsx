@@ -60,6 +60,7 @@ import { ListeningDock } from "@/components/listening-dock";
 import { SessionFind } from "@/components/session-find";
 import { SelectionToolbar } from "@/components/selection-toolbar";
 import { ExplainProvider, useExplain } from "@/components/explain-panel";
+import { MeaningInferProvider } from "@/components/meaning-infer-panel";
 import { SessionMessageNavigation } from "@/components/session-navigation";
 import { PracticeDock } from "@/components/practice-dock";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
@@ -86,7 +87,9 @@ import {
 	teachStepIndex,
 	toolQuestionKind,
 	questionNeedsReveal,
+	listeningInputProblems,
 } from "@/src/core";
+import { selectionTextInScope } from "@/lib/transcript-selection";
 import { ReadingThinkingField } from "@/components/reading-thinking";
 import { currentUserThinkingOpen, setAllUserThinkingOpen } from "@/components/thinking-block";
 import { slotsConfigured, type ModelsSettings } from "@/src/core";
@@ -343,6 +346,8 @@ export function Chat({
 		useChatSession({ chatId, initialMessages, initiallyInFlight });
 
 	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);
+	const [manualListening, setManualListening] = useState<{ targetText: string; contextText?: string } | null>(null);
+	const [listenNotice, setListenNotice] = useState<string | null>(null);
 	const columnRef = useRef<HTMLDivElement | null>(null);
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
@@ -555,6 +560,28 @@ export function Chat({
 	}, []);
 
 	const pending = findPendingDockCall(messages);
+
+	const startManualListening = useCallback(() => {
+		const text = selectionTextInScope(sessionFindScopeRef.current);
+		if (!text) {
+			setListenNotice("Highlight French text in the transcript, then tap Listen.");
+			return;
+		}
+		const problems = listeningInputProblems({ targetText: text });
+		if (problems.length > 0) {
+			setListenNotice(problems[0] ?? "That selection cannot be used for listening practice.");
+			return;
+		}
+		setListenNotice(null);
+		setManualListening({
+			targetText: text,
+			contextText: "Extra practice — type what you hear.",
+		});
+	}, []);
+
+	useEffect(() => {
+		if (pending) setManualListening(null);
+	}, [pending]);
 	// The abort handler reads the pending question from a ref (the window
 	// listener is mount-scoped; the value it needs is render-scoped).
 	const pendingRef = useRef(pending);
@@ -1464,6 +1491,7 @@ export function Chat({
 
 	return (
 		<ExplainProvider chatId={chatId} columnRef={columnRef}>
+		<MeaningInferProvider chatId={chatId} columnRef={columnRef}>
 		<ChatActionsContext.Provider
 			value={{
 				chatId,
@@ -2022,8 +2050,12 @@ export function Chat({
 							nextProblem={nextReady}
 							onNext={sendNext}
 							placeholder={nextReady ? "Ask anything, or press Enter for the next one." : undefined}
+							onListenPractice={kind !== "practice" ? startManualListening : undefined}
+							listenNotice={listenNotice}
 						/>
 					}
+					manualListening={manualListening}
+					onManualListeningDone={() => setManualListening(null)}
 					onSubmitAnswer={(output) => {
 						if (!pending) return;
 						// THE ANSWER IS THE QUESTION CALL'S TOOL RESULT (fork 1, owner
@@ -2110,6 +2142,7 @@ export function Chat({
 			}}
 		/>
 		</ChatActionsContext.Provider>
+		</MeaningInferProvider>
 		</ExplainProvider>
 	);
 }
@@ -2246,6 +2279,8 @@ function DockOverlay({
 	dictationCancel,
 	setupCta,
 	queuedSteers,
+	manualListening,
+	onManualListeningDone,
 }: {
 	pending: ReturnType<typeof findPendingDockCall>;
 	/** Compaction running for this chat (round 14) — the docks' submit
@@ -2297,6 +2332,9 @@ function DockOverlay({
 	/** The persistent setup CTA (BYOK, owner 2026-09-22): the same pill
 	 *  home and /chat/new carry, above the composer while slots are unset. */
 	setupCta?: React.ReactNode;
+	/** Learner-initiated listening (transcript selection) — no agent tool call. */
+	manualListening: { targetText: string; contextText?: string } | null;
+	onManualListeningDone: () => void;
 }) {
 	const { isAtBottom, scrollToBottom, scrollRef } = useStickToBottomContext();
 	// Render-fresh bottom state (flicker round): the arrival block below reads
@@ -2312,6 +2350,13 @@ function DockOverlay({
 	// learner reads the teaching first and opens the check when ready. Once
 	// revealed, the normal collapse machine rules apply untouched.
 	const [revealed, setRevealed] = useState(false);
+
+	useEffect(() => {
+		if (manualListening) {
+			setExpanded(true);
+			setRevealed(true);
+		}
+	}, [manualListening]);
 	const revealPending = requiresReveal && !revealed;
 
 	const pendingId = pending?.toolCallId ?? null;
@@ -2739,6 +2784,16 @@ function DockOverlay({
 									dictationClaim={!revealPending}
 									compactionRunning={compactionRunning}
 									onAsk={onAskQuestion}
+								/>
+							) : manualListening ? (
+								<ListeningDock
+									input={manualListening}
+									expanded={expanded}
+									onExpand={expandAndReveal}
+									onEscape={dictationCancel}
+									compactionRunning={compactionRunning}
+									mode="manual"
+									onManualDone={onManualListeningDone}
 								/>
 							) : practice ? (
 								<PracticeDock

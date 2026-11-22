@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
+import { ArrowRightIcon, CornerDownLeftIcon, HeadphonesIcon, SquareIcon } from "lucide-react";
 import { DictationTextarea } from "@/components/dictation-text";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
@@ -51,6 +51,8 @@ export function Composer({
 	placeholder = "Ask, answer, or steer the lesson…",
 	nextProblem = false,
 	onNext,
+	onListenPractice,
+	listenNotice,
 }: {
 	busy: boolean;
 	value: string;
@@ -76,6 +78,10 @@ export function Composer({
 	/** The signal's dispatcher (send({type:"next"})) — the chip and the
 	 *  empty-Enter share it. */
 	onNext?: () => void;
+	/** Opens extra listening practice from the current transcript selection. */
+	onListenPractice?: () => void;
+	/** Shown when Listen was tapped without a valid selection. */
+	listenNotice?: string | null;
 }) {
 	const act = () => {
 		const action = enterAction({ busy, canSend, nextProblem });
@@ -121,6 +127,18 @@ export function Composer({
 				rows={1}
 				className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 			/>
+			{onListenPractice && (
+				<button
+					type="button"
+					data-testid="composer-listen-practice"
+					aria-label="Listening practice from selection"
+					title={listenNotice ?? "Highlight French in the transcript, then listen and type"}
+					onClick={onListenPractice}
+					className="flex size-10 shrink-0 items-center justify-center rounded-[10px] border border-border bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+				>
+					<HeadphonesIcon className="size-4" />
+				</button>
+			)}
 			{/* The button follows the text (owner report 2026-10-03): while
 				 a turn runs WITH text typed it stays the SEND affordance
 				 (click = steer — steering must be clickable, not Enter-only);

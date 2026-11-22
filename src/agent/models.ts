@@ -73,27 +73,39 @@ export function syncOpenAICompatibleProviders(endpoints?: ReturnType<typeof open
 			name: ep.label,
 			baseUrl: ep.baseUrl,
 			auth: {
-				name: `${ep.label} API key`,
-				resolve: async ({ credential }: any) => {
-					const key = credential?.key ?? process.env[ep.envVar];
-					if (!key) return undefined;
-					return { auth: { apiKey: key, baseUrl: ep.baseUrl }, source: ep.envVar };
+				apiKey: {
+					name: `${ep.label} API key`,
+					resolve: async ({ credential }: any) => {
+						const key = credential?.key ?? process.env[ep.envVar];
+						if (!key) return undefined;
+						return { auth: { apiKey: key, baseUrl: ep.baseUrl }, source: ep.envVar };
+					},
 				},
 			} as any,
 			models: [],
 			api: { stream: openaiResponsesStream, streamSimple: openaiResponsesStreamSimple },
 			fetchModels: async (context: any) => {
 				const apiKey = context?.credential?.type === "apiKey" ? context.credential.key : process.env[ep.envVar];
-				const res = await fetch(`${ep.baseUrl.replace(/\/$/, "")}/models`, {
-					headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-					signal: context?.signal,
-				});
-				if (!res.ok) return [];
-				const json = await res.json().catch(() => ({}));
-				const data = Array.isArray(json?.data) ? json.data : [];
-				return data.map((m: any) => ({
-					id: String(m.id),
-					name: String(m.id),
+				let ids: string[] = [];
+				try {
+					const res = await fetch(`${ep.baseUrl.replace(/\/$/, "")}/models`, {
+						headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+						signal: context?.signal,
+					});
+					if (res.ok) {
+						const json = await res.json().catch(() => ({}));
+						const data = Array.isArray(json?.data) ? json.data : [];
+						ids = data.map((m: any) => String(m.id));
+					}
+				} catch {
+					// fall through to manual list
+				}
+				if (ids.length === 0 && Array.isArray(ep.models) && ep.models.length > 0) {
+					ids = ep.models;
+				}
+				return ids.map((id) => ({
+					id,
+					name: id,
 					api: "openai-responses",
 					provider: ep.id,
 					baseUrl: ep.baseUrl,

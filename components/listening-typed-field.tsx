@@ -2,10 +2,20 @@
 
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { diffListeningTokens, normalizeListeningText } from "@/src/core";
+import { highlightTypedSegments, normalizeListeningText } from "@/src/core";
+
+const HIGHLIGHT: Record<string, string> = {
+	exact: "text-emerald-600 dark:text-emerald-400",
+	accent: "text-amber-600 dark:text-amber-400 underline decoration-amber-500/80 decoration-2 underline-offset-2",
+	partial: "text-amber-600 dark:text-amber-400",
+	wrong: "text-red-600 dark:text-red-400",
+	extra: "text-red-600 dark:text-red-400",
+	neutral: "text-foreground",
+};
 
 /**
- * Typing field with a mirror overlay — each token is colored correct/wrong/pending.
+ * Typing field — the learner's text is shown once, token-colored underneath
+ * a transparent textarea (caret only). No ghost of untyped target words.
  */
 export function ListeningTypedField({
 	value,
@@ -20,35 +30,27 @@ export function ListeningTypedField({
 	disabled?: boolean;
 	placeholder?: string;
 }) {
-	const diffs = useMemo(() => diffListeningTokens(targetText, value), [targetText, value]);
-	const mirror = useMemo(() => {
+	const segments = useMemo(() => highlightTypedSegments(targetText, value), [targetText, value]);
+
+	const coloredLayer = useMemo(() => {
 		if (!value) return null;
 		return (
 			<div
 				aria-hidden
 				className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-3 py-2 font-mono text-sm leading-relaxed"
 			>
-				{diffs.map((d, i) => (
-					<span
-						key={i}
-						className={cn(
-							d.status === "correct" && "text-emerald-600 dark:text-emerald-400",
-							d.status === "wrong" && "text-red-600 dark:text-red-400",
-							d.status === "pending" && "text-muted-foreground/40",
-							d.status === "extra" && "text-amber-600 dark:text-amber-400",
-						)}
-					>
-						{d.token}
-						{i < diffs.length - 1 ? " " : ""}
+				{segments.map((seg, i) => (
+					<span key={i} className={cn(HIGHLIGHT[seg.status])}>
+						{seg.text}
 					</span>
 				))}
 			</div>
 		);
-	}, [diffs, value]);
+	}, [segments, value]);
 
 	return (
 		<div className="relative min-h-[6rem] rounded-lg border bg-background">
-			{mirror}
+			{coloredLayer}
 			<textarea
 				value={value}
 				disabled={disabled}
@@ -56,7 +58,7 @@ export function ListeningTypedField({
 				data-testid="listening-type-field"
 				onChange={(e) => onChange(e.target.value)}
 				className={cn(
-					"relative z-10 min-h-[6rem] w-full resize-y bg-transparent px-3 py-2 font-mono text-sm leading-relaxed caret-foreground",
+					"relative z-10 min-h-[6rem] w-full resize-y bg-transparent px-3 py-2 font-mono text-sm leading-relaxed caret-foreground selection:bg-primary/20",
 					value ? "text-transparent" : "text-foreground",
 				)}
 				spellCheck={false}

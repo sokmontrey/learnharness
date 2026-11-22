@@ -13,6 +13,7 @@ export async function POST(req: Request) {
 	const body = await req.json().catch(() => ({}));
 	const label = String(body.label ?? "").trim();
 	const baseUrl = String(body.baseUrl ?? "").trim().replace(/\/$/, "");
+	const models = Array.isArray(body.models) ? body.models.map((m: unknown) => String(m).trim()).filter(Boolean) : [];
 	if (!label || !baseUrl) {
 		return NextResponse.json({ error: "label and baseUrl required" }, { status: 400 });
 	}
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
 	let i = 2;
 	while (list.some((e) => e.id === id)) { id = `${slug}-${i++}`; }
 	const envVar = envVarForSlug(id);
-	list.push({ id, label, baseUrl, envVar });
+	list.push({ id, label, baseUrl, envVar, models });
 	openAICompatibleStore.save(list);
 	syncOpenAICompatibleProviders(list);
 	return NextResponse.json({ endpoint: { id, label, baseUrl, envVar } });

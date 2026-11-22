@@ -330,6 +330,7 @@ export function KeysSection({
 	const [compatEndpoints, setCompatEndpoints] = useState<Array<{ id: string; label: string; baseUrl: string; envVar: string }>>([]);
 	const [compatLabel, setCompatLabel] = useState("");
 	const [compatUrl, setCompatUrl] = useState("");
+	const [compatModels, setCompatModels] = useState("");
 	const [compatBusy, setCompatBusy] = useState(false);
 	/** The unfolded row (its id), null = all folded. Seeded by the
 	 *  deep-link (initialRow) and re-followed when it retargets. */
@@ -479,26 +480,33 @@ export function KeysSection({
 						</button>
 					</div>
 				))}
-				<div className="flex items-center gap-2 px-1 py-1.5">
-					<input value={compatLabel} onChange={(e) => setCompatLabel(e.target.value)} placeholder="Label (e.g. Radium)" className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 text-xs" data-testid="compat-label" />
-					<input value={compatUrl} onChange={(e) => setCompatUrl(e.target.value)} placeholder="https://api.radium.cloud/v1" className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 text-xs" data-testid="compat-url" />
-					<button
-						type="button"
-						disabled={compatBusy || !compatLabel.trim() || !compatUrl.trim()}
-						data-testid="compat-add"
-						onClick={async () => {
-							setCompatBusy(true);
-							await fetch("/api/openai-compatible", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: compatLabel, baseUrl: compatUrl }) });
-							setCompatLabel("");
-							setCompatUrl("");
-							await reload();
-							notifySettingsSaved("keys");
-							setCompatBusy(false);
-						}}
-						className="text-xs text-foreground underline-offset-2 hover:underline disabled:text-muted-foreground/40"
-					>
-						Add
-					</button>
+				<div className="flex flex-col gap-1 px-1 py-1.5">
+					<div className="flex items-center gap-2">
+						<input value={compatLabel} onChange={(e) => setCompatLabel(e.target.value)} placeholder="Label (e.g. Radium)" className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 text-xs" data-testid="compat-label" />
+						<input value={compatUrl} onChange={(e) => setCompatUrl(e.target.value)} placeholder="https://api.radium.cloud/v1" className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 text-xs" data-testid="compat-url" />
+					</div>
+					<div className="flex items-center gap-2">
+						<input value={compatModels} onChange={(e) => setCompatModels(e.target.value)} placeholder="Model names (comma-separated, e.g. hal-1.0)" className="h-7 min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 text-xs" data-testid="compat-models" />
+						<button
+							type="button"
+							disabled={compatBusy || !compatLabel.trim() || !compatUrl.trim()}
+							data-testid="compat-add"
+							onClick={async () => {
+								setCompatBusy(true);
+								const models = compatModels.split(",").map((s) => s.trim()).filter(Boolean);
+								await fetch("/api/openai-compatible", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: compatLabel, baseUrl: compatUrl, models }) });
+								setCompatLabel("");
+								setCompatUrl("");
+								setCompatModels("");
+								await reload();
+								notifySettingsSaved("keys");
+								setCompatBusy(false);
+							}}
+							className="text-xs text-foreground underline-offset-2 hover:underline disabled:text-muted-foreground/40"
+						>
+							Add
+						</button>
+					</div>
 				</div>
 			</SettingsGroup>
 			<SettingsGroup label="Subscriptions" testid="group-subscriptions">

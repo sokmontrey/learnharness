@@ -10,6 +10,8 @@ export interface OpenAICompatibleEndpoint {
 	baseUrl: string;
 	/** The env var the API key rides in (stored in auth.json). */
 	envVar: string;
+	/** Optional manually specified model ids (used when /models is unavailable). */
+	models?: string[];
 }
 
 /** Turn a free-form label into a safe slug id. */

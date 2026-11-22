@@ -25,9 +25,13 @@ import { NATIVE_SUBSCRIPTIONS } from "../core/contracts/subscriptions.ts";
 import { nativeSubscriptionId, nativeSubscriptionConnected, nativeSubscriptionModel, nativeSubscriptionModels, refreshSubscriptionModels } from "../agent/subscription-bridge.ts";
 
 export async function refreshConnectionCatalog(provider?: string): Promise<void> {
+	const pi = piModels();
+	const customIds = openAICompatibleStore.list().map((e) => e.id);
+	const targets = provider ? [provider] : customIds;
 	await Promise.all([
-		!provider || provider === "chatgpt" ? refreshChatGPTModels(piModels().getModels("openai").filter((m): m is Model<"openai-responses"> => m.api === "openai-responses")) : Promise.resolve(),
+		!provider || provider === "chatgpt" ? refreshChatGPTModels(pi.getModels("openai").filter((m): m is Model<"openai-responses"> => m.api === "openai-responses")) : Promise.resolve(),
 		!provider || nativeSubscriptionId(provider) ? refreshSubscriptionModels() : Promise.resolve(),
+		(provider === undefined || customIds.includes(provider)) ? pi.refresh({ providers: provider ? [provider] : customIds, allowNetwork: true }).then((r) => { if (r.errors.size) console.error("[openai-compatible] refresh errors", [...r.errors.entries()]); return r; }) : Promise.resolve(),
 	]);
 }
 function connectionModel(provider: string, id: string): Model<Api> | undefined {
