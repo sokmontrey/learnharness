@@ -182,6 +182,8 @@ export function ExplainProvider({
 				<div
 					ref={rootRef}
 					data-testid="explain-panel"
+					data-selection-surface=""
+					data-source-message-id={req.targetMessageId}
 					className="fixed z-40 flex flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
 					style={{ left, top, maxHeight: maxH, width }}
 				>

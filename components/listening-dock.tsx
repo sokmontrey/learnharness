@@ -30,6 +30,7 @@ export function ListeningDock({
 	compactionRunning,
 	mode = "agent",
 	onManualDone,
+	sourceMessageId,
 }: {
 	toolCallId?: string;
 	input: unknown;
@@ -41,6 +42,8 @@ export function ListeningDock({
 	/** Agent dock posts an answer; manual practice closes locally only. */
 	mode?: "agent" | "manual";
 	onManualDone?: () => void;
+	/** Assistant message hosting this tool call (agent mode). */
+	sourceMessageId?: string;
 }) {
 	const parsed = useMemo(() => parseListeningInput(input), [input]);
 	const targetText = parsed?.targetText ?? "";
@@ -140,7 +143,10 @@ export function ListeningDock({
 
 	return (
 		<div className="flex flex-col gap-0" data-testid="listening-dock">
-			<div className="border-b border-border/60 px-4 py-3">
+			<div
+				className="lh-source-passage border-b border-border/60 px-4 py-3"
+				data-source-message-id={sourceMessageId || undefined}
+			>
 				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 					{mode === "manual" ? "Listening (your pick)" : "Listening"}
 				</div>

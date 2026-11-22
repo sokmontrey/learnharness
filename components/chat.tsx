@@ -703,6 +703,12 @@ export function Chat({
 		[activeProblem, askHostMessageId, captureAsk, chatId, titleText],
 	);
 
+	const selectionContextMessageId = useMemo(() => {
+		if (pending) return askHostMessageId(pending.toolCallId) ?? lastAssistantId;
+		if (activeProblem) return askHostMessageId(activeProblem.toolCallId) ?? lastAssistantId;
+		return lastAssistantId;
+	}, [pending, activeProblem, askHostMessageId, lastAssistantId]);
+
 	const localStream = status === "submitted" || status === "streaming";
 	const busy = localStream || turnInFlight;
 	const busyRef = useRef(busy);
@@ -1705,7 +1711,11 @@ export function Chat({
 
 				<SessionFind scopeRef={sessionFindScopeRef} scrollContextRef={scrollContextRef} />
 				<div ref={sessionFindScopeRef} className="relative flex min-h-0 flex-1">
-				<SelectionToolbar scopeRef={sessionFindScopeRef} askSource={{ chatId, title: titleText }} />
+				<SelectionToolbar
+					scopeRef={sessionFindScopeRef}
+					askSource={{ chatId, title: titleText }}
+					fallbackMessageId={selectionContextMessageId}
+				/>
 				<Conversation className="h-full min-w-0 flex-1" initial="instant" contextRef={scrollContextRef}>
 					<SessionMessageNavigation />
 					<ConversationContent className="min-h-full gap-0 p-0">
@@ -1821,6 +1831,7 @@ export function Chat({
 										    transparent prose). The "You" label stays — one register
 										    with the thinking labels. */
 										className="relative my-2 w-full border-l-[calc(3ch-14px)] border-muted-foreground/30 bg-card py-1 pl-[14px] pr-4 font-ui text-xs"
+										data-source-message-id={m.id ?? undefined}
 									>
 										<AskTurnIndicators badges={askBadges.get(m.id ?? "") ?? []} onOpen={openAskBadge} />
 												{/* The rail GROUPS (owner round 4, 2026-10-05): the YOU heading
@@ -1832,7 +1843,11 @@ export function Chat({
 												</div>
 											</div>
 									) : (
-									<Message from="assistant" className="group/explain-msg relative max-w-full">
+									<Message
+										from="assistant"
+										className="group/explain-msg relative max-w-full"
+										data-source-message-id={m.id ?? undefined}
+									>
 									<AskTurnIndicators badges={askBadges.get(m.id ?? "") ?? []} onOpen={openAskBadge} />
 									<ExplainAskButton messageId={m.id ?? ""} prominent={m.id === lastAssistantId} />
 									<MessageContent className="w-full">
@@ -1906,7 +1921,12 @@ export function Chat({
 														// transcript; answered ones render as graded records.
 														if (part.state === "output-available") {
 															return (
-																<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
+																<AnsweredCard
+																	key={pi}
+																	answer={part.output as QuestionAnswerData}
+																	input={part.input}
+																	sourceMessageId={m.id}
+																/>
 															);
 														}
 														return null;
@@ -2031,6 +2051,10 @@ export function Chat({
 						)
 					}
 					composer={
+						<div
+							className="lh-source-passage"
+							data-source-message-id={selectionContextMessageId ?? undefined}
+						>
 						<Composer
 							// Stop aborts ANY in-flight turn (stream-reattach wave): the
 							// square renders while a reattached/wake turn runs too — the
@@ -2053,7 +2077,9 @@ export function Chat({
 							onListenPractice={kind !== "practice" ? startManualListening : undefined}
 							listenNotice={listenNotice}
 						/>
+						</div>
 					}
+					dockSourceMessageId={selectionContextMessageId ?? undefined}
 					manualListening={manualListening}
 					onManualListeningDone={() => setManualListening(null)}
 					onSubmitAnswer={(output) => {
@@ -2281,6 +2307,7 @@ function DockOverlay({
 	queuedSteers,
 	manualListening,
 	onManualListeningDone,
+	dockSourceMessageId,
 }: {
 	pending: ReturnType<typeof findPendingDockCall>;
 	/** Compaction running for this chat (round 14) — the docks' submit
@@ -2335,6 +2362,8 @@ function DockOverlay({
 	/** Learner-initiated listening (transcript selection) — no agent tool call. */
 	manualListening: { targetText: string; contextText?: string } | null;
 	onManualListeningDone: () => void;
+	/** Context anchor for selection Help on dock/composer text. */
+	dockSourceMessageId?: string;
 }) {
 	const { isAtBottom, scrollToBottom, scrollRef } = useStickToBottomContext();
 	// Render-fresh bottom state (flicker round): the arrival block below reads
@@ -2769,6 +2798,7 @@ function DockOverlay({
 									onSubmit={onSubmitAnswer}
 									onEscape={dictationCancel}
 									compactionRunning={compactionRunning}
+									sourceMessageId={dockSourceMessageId}
 								/>
 							) : pending ? (
 								<QuestionDock
@@ -2784,6 +2814,7 @@ function DockOverlay({
 									dictationClaim={!revealPending}
 									compactionRunning={compactionRunning}
 									onAsk={onAskQuestion}
+									sourceMessageId={dockSourceMessageId}
 								/>
 							) : manualListening ? (
 								<ListeningDock
@@ -2794,6 +2825,7 @@ function DockOverlay({
 									compactionRunning={compactionRunning}
 									mode="manual"
 									onManualDone={onManualListeningDone}
+									sourceMessageId={dockSourceMessageId}
 								/>
 							) : practice ? (
 								<PracticeDock
@@ -2808,6 +2840,7 @@ function DockOverlay({
 									onEscape={dictationCancel}
 									compactionRunning={compactionRunning}
 									onAsk={onAskProblem}
+									sourceMessageId={dockSourceMessageId}
 								/>
 							) : (
 								composer

@@ -95,6 +95,8 @@ export interface QuestionDockProps {
 	/** Capture this question prompt as an Ask reference (owner, 2026-11):
 	 *  creates an Ask thread with the prompt pinned. */
 	onAsk?: (text: string) => void;
+	/** Assistant message hosting this tool call — selection Help/Explain anchor. */
+	sourceMessageId?: string;
 }
 
 export function QuestionDock({
@@ -110,6 +112,7 @@ export function QuestionDock({
 	dictationClaim = true,
 	compactionRunning = false,
 	onAsk,
+	sourceMessageId,
 }: QuestionDockProps) {
 	// The probe-phase names (owner, 2026-10-09) canonicalize onto their
 	// teach twins for every dock concern — parse dispatch, labels, kinds:
@@ -165,6 +168,7 @@ export function QuestionDock({
 					dictationClaim={dictationClaim}
 					compactionRunning={compactionRunning}
 					onAsk={onAsk}
+					sourceMessageId={sourceMessageId}
 				/>
 			</div>
 		</>
@@ -270,6 +274,7 @@ function QuestionDockForm({
 	dictationClaim = true,
 	compactionRunning = false,
 	onAsk,
+	sourceMessageId,
 }: Omit<QuestionDockProps, "expanded" | "onExpand" | "reveal">) {
 	const kind = toolQuestionKind(toolName);
 
@@ -561,7 +566,11 @@ function QuestionDockForm({
 			{/* Question area — scrolls internally if very tall; the bottom row stays put.
 			    Capped by the measured column (--dock-max-h; the old fixed 55dvh cut
 			    long questions short — owner round, 2026-10-05). */}
-			<div data-session-find-root="" className="max-h-[var(--dock-max-h,55dvh)] overflow-y-auto px-4 pt-3">
+			<div
+				data-session-find-root=""
+				data-source-message-id={sourceMessageId || undefined}
+				className="lh-source-passage max-h-[var(--dock-max-h,55dvh)] overflow-y-auto px-4 pt-3"
+			>
 				<div className="mb-1 flex items-center gap-2">
 					<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 						{toolName === "probe"

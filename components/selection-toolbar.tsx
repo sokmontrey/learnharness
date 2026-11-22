@@ -9,6 +9,7 @@ import { useExplain } from "@/components/explain-panel";
 import { useMeaningInfer } from "@/components/meaning-infer-panel";
 import { useAskCapture } from "@/components/ask-capture";
 import { PronouncePanel } from "@/components/pronounce-panel";
+import { elementInSelectionScope, selectionMessageIdFromElement } from "@/lib/selection-scope";
 import {
 	TTS_MAX_CHARS,
 	TTS_NORMAL_RATE,
@@ -31,9 +32,12 @@ const LANGUAGE_LABEL: Record<TtsLanguage, string> = { fr: "French", en: "English
 export function SelectionToolbar({
 	scopeRef,
 	askSource,
+	fallbackMessageId,
 }: {
 	scopeRef: RefObject<HTMLElement | null>;
 	askSource?: { chatId: string; title: string };
+	/** When the selection has no nearer anchor (composer, plain dock chrome). */
+	fallbackMessageId?: string | null;
 }) {
 	const provider = useMemo(() => createTtsProvider(), []);
 	const { open: openSettings } = useSettingsDialog();
@@ -70,12 +74,11 @@ export function SelectionToolbar({
 			const node = sel.anchorNode;
 			const el = node instanceof Element ? node : node?.parentElement;
 			const scope = scopeRef.current;
-			if (!el || !scope || !scope.contains(el)) {
+			if (!el || !scope || !elementInSelectionScope(el, scope)) {
 				setAnchor(null);
 				return;
 			}
-			const holder = el.closest("[data-source-message-id]") as HTMLElement | null;
-			const messageId = holder?.dataset.sourceMessageId ?? null;
+			const messageId = selectionMessageIdFromElement(el) ?? fallbackMessageId ?? null;
 			if (text !== lastText.current) {
 				lastText.current = text;
 				setStatus("ok");
@@ -111,7 +114,7 @@ export function SelectionToolbar({
 			document.removeEventListener("scroll", onScroll, true);
 			provider.cancel();
 		};
-	}, [provider, scopeRef]);
+	}, [provider, scopeRef, fallbackMessageId]);
 
 	const readAloud = (language: TtsLanguage) => {
 		if (status === "key-needed") {

@@ -20,11 +20,22 @@ import { parseAskInput, parseQuizInput } from "@/src/core";
  * client — the card reveals his answer, the committed correct answer, and
  * the explanation, with NO verdict chips (owner ruling 2026-09-27).
  */
-export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; input?: unknown }) {
+export function AnsweredCard({
+	answer,
+	input,
+	sourceMessageId,
+}: {
+	answer: QuestionAnswerData;
+	input?: unknown;
+	sourceMessageId?: string;
+}) {
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
 	if (answer.dismissed) {
 		return (
-			<div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+			<div
+				className="lh-source-passage rounded-xl border bg-card p-4 text-sm text-muted-foreground"
+				data-source-message-id={sourceMessageId || undefined}
+			>
 				<span className="font-medium">{answer.questionText}</span> — skipped
 			</div>
 		);
@@ -33,7 +44,11 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 	if (answer.kind === "listening") {
 		const pct = Math.round((answer.tokenScore ?? 0) * 100);
 		return (
-			<div className="rounded-xl border bg-card p-4 text-card-foreground" data-testid="answered-listening-card">
+			<div
+				className="lh-source-passage rounded-xl border bg-card p-4 text-card-foreground"
+				data-testid="answered-listening-card"
+				data-source-message-id={sourceMessageId || undefined}
+			>
 				<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 					Listening
 					{answer.perfect ? (
@@ -88,8 +103,9 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 		    p-4 into a 28px void below (12px above); the card's own padding is
 		    the bottom rhythm when a row ends the card. */}
 		<div
-			className="rounded-xl border bg-card p-4 text-card-foreground [&>*:last-child]:mb-0"
+			className="lh-source-passage rounded-xl border bg-card p-4 text-card-foreground [&>*:last-child]:mb-0"
 			data-testid="answered-card"
+			data-source-message-id={sourceMessageId || undefined}
 		>
 			<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				{/* The tool's OWN name first (owner 2026-10-09): probe-phase

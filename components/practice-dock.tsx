@@ -51,9 +51,21 @@ export interface PracticeDockProps {
 	/** Capture this problem statement as an Ask reference (owner, 2026-11):
 	 *  creates an Ask thread with the statement pinned. */
 	onAsk?: (text: string) => void;
+	/** Assistant message hosting this problem tool call. */
+	sourceMessageId?: string;
 }
 
-export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false, onAsk }: PracticeDockProps) {
+export function PracticeDock({
+	problemCallId,
+	input,
+	expanded,
+	onExpand,
+	onSubmit,
+	onEscape,
+	compactionRunning = false,
+	onAsk,
+	sourceMessageId,
+}: PracticeDockProps) {
 	const [thinking, setThinking] = useState("");
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
@@ -110,7 +122,10 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 			    cards' label row — owner round, 2026-10-05) + the statement,
 			    markdown + LaTeX rendered, capped by the measured column
 			    (--dock-max-h; the old fixed 40vh cut long problems short). */}
-			<div className="max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
+			<div
+				data-source-message-id={sourceMessageId || undefined}
+				className="lh-source-passage max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2"
+			>
 				<div className="mb-1 flex items-center gap-2">
 					<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
 					{onAsk && (
