@@ -56,6 +56,7 @@ import { ArrowRightIcon, DumbbellIcon, MessageSquareIcon, SparklesIcon, Waypoint
 import type { PlanBlockData } from "@/src/core";
 import { AskPanel } from "@/components/ask-panel";
 import { QuestionDock } from "@/components/question-dock";
+import { ListeningDock } from "@/components/listening-dock";
 import { SessionFind } from "@/components/session-find";
 import { SelectionToolbar } from "@/components/selection-toolbar";
 import { ExplainProvider, useExplain } from "@/components/explain-panel";
@@ -79,7 +80,7 @@ import {
 	activeProblemOf,
 	askTurnAnchorMap,
 	dismissedAnswer,
-	findPendingToolCall,
+	findPendingDockCall,
 	phaseAt3,
 	phaseTimeline,
 	teachStepIndex,
@@ -509,7 +510,11 @@ export function Chat({
 			// route parks the dismissal (202) and the settle applies it.
 			const p = pendingRef.current;
 			if (p) {
-				const question = (p.input as { question?: string } | null)?.question ?? "";
+				const question =
+					p.tool === "listening"
+						? ((p.input as { contextText?: string } | null)?.contextText?.trim() ||
+								"Listening practice")
+						: ((p.input as { question?: string } | null)?.question ?? "");
 				const reading = readingThinkingRef.current.trim() || undefined;
 				clearReadingThinking();
 				const answer = dismissedAnswer(toolQuestionKind(p.tool), question);
@@ -549,7 +554,7 @@ export function Chat({
 		// mount-only by design (turnInFlight read at initial value)
 	}, []);
 
-	const pending = findPendingToolCall(messages);
+	const pending = findPendingDockCall(messages);
 	// The abort handler reads the pending question from a ref (the window
 	// listener is mount-scoped; the value it needs is render-scoped).
 	const pendingRef = useRef(pending);
@@ -1867,6 +1872,7 @@ export function Chat({
 													case "tool-probe":
 													case "tool-ask_user_question":
 													case "tool-explain":
+													case "tool-listening":
 													case "tool-recall": {
 														// Pending/streaming questions live in the dock, not the
 														// transcript; answered ones render as graded records.
@@ -2241,7 +2247,7 @@ function DockOverlay({
 	setupCta,
 	queuedSteers,
 }: {
-	pending: ReturnType<typeof findPendingToolCall>;
+	pending: ReturnType<typeof findPendingDockCall>;
 	/** Compaction running for this chat (round 14) — the docks' submit
 	 *  affordance gate (the server's registry is the real one). */
 	compactionRunning: boolean;
@@ -2709,7 +2715,17 @@ function DockOverlay({
 						key={mode}
 						className={mode === initialModeRef.current ? undefined : "dock-variant"}
 					>
-							{pending ? (
+							{pending?.tool === "listening" ? (
+								<ListeningDock
+									toolCallId={pending.toolCallId}
+									input={pending.input}
+									expanded={expanded}
+									onExpand={expandAndReveal}
+									onSubmit={onSubmitAnswer}
+									onEscape={dictationCancel}
+									compactionRunning={compactionRunning}
+								/>
+							) : pending ? (
 								<QuestionDock
 									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall"}
 									toolCallId={pending.toolCallId}

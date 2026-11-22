@@ -18,6 +18,7 @@
  */
 
 import { Type, type Static } from "typebox";
+import { scoreListening } from "./listening-core.ts";
 import { stripModelValueDebris } from "./value-debris.ts";
 
 // ─── shared types ───────────────────────────────────────────────────────────
@@ -404,7 +405,7 @@ export interface OptionAnswer {
 	index: number; // 1-based display index
 }
 
-export type QuestionKind = "quiz" | "ask" | "explain";
+export type QuestionKind = "quiz" | "ask" | "explain" | "listening";
 export type SelectMode = "single-select" | "multi-select";
 export type QuestionMode = SelectMode | "text";
 
@@ -468,6 +469,12 @@ export interface QuestionAnswerData {
 	committed?: string; // explain only (rendering): the model's committed answer
 	explanation?: string; // quiz only (rendering)
 	dismissed?: boolean;
+	/** listening only: target sentence (for answered card + masking). */
+	listeningTarget?: string;
+	/** listening only: fraction of tokens correct (0–1). */
+	tokenScore?: number;
+	/** listening only: exact match after normalization. */
+	perfect?: boolean;
 	answeredAt: string;
 }
 
@@ -761,8 +768,34 @@ export function dismissedAnswer(kind: QuestionKind, questionText: string): Quest
 	};
 }
 
+export function buildListeningAnswer(
+	targetText: string,
+	contextText: string | undefined,
+	typedText: string,
+): QuestionAnswerData {
+	const { tokenScore, perfect } = scoreListening(targetText, typedText);
+	return {
+		kind: "listening",
+		questionText: contextText?.trim() || "Listen and type the French sentence.",
+		listeningTarget: targetText,
+		dontKnow: false,
+		answers: [],
+		text: typedText.trim(),
+		tokenScore,
+		perfect,
+		answeredAt: new Date().toISOString(),
+	};
+}
+
 export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, unknown> {
 	if (ad.dismissed) return { kind: ad.kind, dismissed: true };
+	if (ad.kind === "listening") {
+		const out: Record<string, unknown> = { kind: "listening" };
+		if (ad.text) out.typedText = ad.text;
+		if (ad.perfect !== undefined) out.perfect = ad.perfect;
+		if (ad.tokenScore !== undefined) out.tokenScore = ad.tokenScore;
+		return out;
+	}
 	const out: Record<string, unknown> = { kind: ad.kind };
 	if (ad.dontKnow) out.dontKnow = true;
 	// Array.isArray: the seam is called with `unknown` answers (test

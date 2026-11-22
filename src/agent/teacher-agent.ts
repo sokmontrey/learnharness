@@ -14,10 +14,11 @@ import {
 	type ProberToolContext,
 	type TeacherToolContext,
 } from "./tools.ts";
+import { listeningTool } from "./tools/listening.ts";
 import { practiceTools, type PracticeToolContext } from "./tools/practice.ts";
 import { healToolRecord } from "./tools/heal.ts";
 import { quizInputObject, quizInputProblems } from "../core/question-core.ts";
-import { QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
+import { LISTENING_TOOLS, QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
 import { toLlmMessages, nativeInputCause } from "../core/native-messages.ts";
 import type { ChatGPTRequestCycle } from "./chatgpt-request-cycle.ts";
 import { usageWasAdmitted } from "./subscription-request-cycle.ts";
@@ -158,17 +159,27 @@ function makeQuestionStopper() {
 		message: { content: Array<{ type: string; id?: string; name?: string }> };
 		toolResults: Array<{ toolCallId: string; isError?: boolean }>;
 	}): boolean => {
-		const called = new Set(
+		const questionCalls = new Set(
 			context.message.content
 				.filter((c) => c.type === "toolCall" && c.name !== undefined && (QUESTION_TOOLS as readonly string[]).includes(c.name!))
 				.map((c) => c.id!),
 		);
-		if (called.size === 0) return false;
-		// Stop only when every question call of this turn resolved cleanly.
-		for (const result of context.toolResults) {
-			if (called.has(result.toolCallId) && result.isError) return false;
+		const listeningCalls = new Set(
+			context.message.content
+				.filter((c) => c.type === "toolCall" && c.name !== undefined && (LISTENING_TOOLS as readonly string[]).includes(c.name!))
+				.map((c) => c.id!),
+		);
+		if (questionCalls.size > 0) {
+			for (const result of context.toolResults) {
+				if (questionCalls.has(result.toolCallId) && result.isError) return false;
+			}
+			return true;
 		}
-		return true;
+		if (listeningCalls.size === 0) return false;
+		for (const result of context.toolResults) {
+			if (listeningCalls.has(result.toolCallId) && result.isError) return false;
+		}
+		return listeningCalls.size > 0;
 	};
 }
 
@@ -307,6 +318,7 @@ export function bareQuestionTools(): Record<string, AgentTool<any>> {
 	// options-unwrap; now it gets the full standard heal like every tool.
 	return healToolRecord({
 		quiz,
+		listening: listeningTool,
 		ask_user_question: askUserQuestionTool,
 	});
 }

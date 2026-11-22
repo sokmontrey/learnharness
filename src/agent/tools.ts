@@ -24,6 +24,7 @@ import { lsTool } from "./tools/ls.ts";
 import { findTool } from "./tools/find.ts";
 import { grepTool } from "./tools/grep.ts";
 import { healToolRecord } from "./tools/heal.ts";
+import { listeningTool } from "./tools/listening.ts";
 import type { GraphStore } from "../core/ports.ts";
 
 export { jobTools };
@@ -318,6 +319,7 @@ export function createProberTools(
 		...filterEnabledTools(
 			{
 				...quizzing,
+				listening: listeningTool,
 				ask_user_question: askUserQuestionTool,
 				// The learner-filesystem set is always-on (user-decided 2026-09,
 				// sources v1): the prober inspects and LOCATES learner-referenced
@@ -448,6 +450,7 @@ export function createTeacherTools(
 		filterEnabledTools(
 			{
 			...quizzing,
+			listening: listeningTool,
 			ask_user_question: askUserQuestionTool,
 			// The learner-filesystem set is always-on (user-decided 2026-09,
 			// sources v1): the teacher locates and reads learner-referenced

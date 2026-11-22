@@ -35,7 +35,7 @@
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Message, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
-import { QUESTION_TOOLS } from "./pending.ts";
+import { DOCK_ANSWER_TOOLS, QUESTION_TOOLS } from "./pending.ts";
 import {
 	CONCLUDE_ACK_TEXT,
 	HANDOFF_TEXT,
@@ -627,6 +627,21 @@ export function toLlmMessages(messages: readonly AgentMessage[]): Message[] {
 
 // ─── native scans (the UIMessage-era pending/phase seams, natively) ──────────
 
+/** Scan forward through one assistant message's tool calls — the first
+ *  unanswered dock tool (listening before quiz when both are present). */
+function danglingDockInAssistant(
+	assistant: AssistantMessage,
+	answered: Set<string>,
+): { toolCallId: string; tool: string; input: unknown } | null {
+	for (const block of assistant.content) {
+		if (block.type !== "toolCall") continue;
+		if (!(DOCK_ANSWER_TOOLS as readonly string[]).includes(block.name)) continue;
+		if (answered.has(block.id)) continue;
+		return { toolCallId: block.id, tool: block.name, input: block.arguments };
+	}
+	return null;
+}
+
 /** The pending-question gate (findPendingToolCall's native twin): the
  *  NEWEST assistant message's FIRST question-tool call with no result in
  *  the tail — one question at a time, the dock's subject. */
@@ -645,6 +660,22 @@ export function danglingQuestionOf(
 			return { toolCallId: block.id, tool: block.name, input: block.arguments };
 		}
 		return null; // the newest assistant message's questions are all answered
+	}
+	return null;
+}
+
+/** Pending listening or question — same forward order as the dock UI. */
+export function danglingDockCallOf(
+	messages: readonly LhMessage[],
+): { toolCallId: string; tool: string; input: unknown } | null {
+	for (let mi = messages.length - 1; mi >= 0; mi--) {
+		const m = messages[mi]!;
+		if ((m as { role?: string }).role !== "assistant") continue;
+		const assistant = m as AssistantMessage & { id: string };
+		const answered = resultIdsFrom(messages.slice(mi + 1));
+		const dock = danglingDockInAssistant(assistant, answered);
+		if (dock) return dock;
+		return null;
 	}
 	return null;
 }
@@ -718,8 +749,12 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 		return ["graph-context", "plan-block", "problem-dismissed", "compaction"].includes(message.customType) ? "neutral" : "unrecognizable";
 	}
 	if (message.role === "toolResult") {
-		if (!(QUESTION_TOOLS as readonly string[]).includes(message.toolName) || message.isError || message.details == null || (message.details as { dismissed?: boolean }).dismissed) return "neutral";
+		if (!(DOCK_ANSWER_TOOLS as readonly string[]).includes(message.toolName) || message.isError || message.details == null || (message.details as { dismissed?: boolean }).dismissed) return "neutral";
 		const details = message.details as Partial<QuestionAnswerData>;
+		if (details.kind === "listening") {
+			if (typeof details.questionText !== "string" || typeof details.answeredAt !== "string") return "unrecognizable";
+			return "learner";
+		}
 		if (!["quiz", "ask", "explain"].includes(details.kind ?? "") || typeof details.questionText !== "string" || typeof details.dontKnow !== "boolean" || !Array.isArray(details.answers) || typeof details.answeredAt !== "string") return "unrecognizable";
 		const calls = history.flatMap((m) => m.role === "assistant" ? m.content.filter((b) => b.type === "toolCall" && b.id === message.toolCallId) : []);
 		return calls.length === 1 && calls[0]?.type === "toolCall" && calls[0].name === message.toolName ? "learner" : "unrecognizable";

@@ -30,6 +30,35 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 		);
 	}
 
+	if (answer.kind === "listening") {
+		const pct = Math.round((answer.tokenScore ?? 0) * 100);
+		return (
+			<div className="rounded-xl border bg-card p-4 text-card-foreground" data-testid="answered-listening-card">
+				<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+					Listening
+					{answer.perfect ? (
+						<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">perfect</span>
+					) : (
+						<span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{pct}%</span>
+					)}
+				</div>
+				{answer.questionText && (
+					<div className="mb-2 text-sm text-muted-foreground">
+						<MessageResponse>{answer.questionText}</MessageResponse>
+					</div>
+				)}
+				<div className="mb-2 font-medium">
+					<MessageResponse>{answer.listeningTarget ?? "—"}</MessageResponse>
+				</div>
+				{answer.text && (
+					<div className="text-sm text-muted-foreground">
+						You typed: <DictationText text={answer.text} />
+					</div>
+				)}
+			</div>
+		);
+	}
+
 	const isQuiz = answer.kind === "quiz";
 	const isExplain = answer.kind === "explain";
 	const selectedIdx = new Set(answer.answers.map((a) => a.index));

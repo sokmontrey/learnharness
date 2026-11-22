@@ -232,6 +232,22 @@ export function questionResult(): AgentToolResult<null> {
 	};
 }
 
+/** The listening pose — client-answered like questions. terminate: false so
+ *  a quiz/ask batched after it in the same message still ends the turn;
+ *  listening-only turns rely on makeTurnStopper. */
+export function listeningResult(): AgentToolResult<null> {
+	return {
+		content: [
+			{
+				type: "text",
+				text: "Listening clip posed — the learner types what they hear; the result arrives as this call's tool output.",
+			},
+		],
+		details: null,
+		terminate: false,
+	};
+}
+
 /** The practice pose's ack (practice sessions, owner 2026-10-04): unlike
  *  a question, this result is FINAL — it persists (persistTurn filters
  *  only QUESTION_TOOLS placeholders), because the learner's submissions

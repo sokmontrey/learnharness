@@ -1400,6 +1400,14 @@ describe("prompt composition", () => {
 		assert.ok(prober.includes("the `read` tool can inspect it directly"), "the prober knows it can read learner files");
 	});
 
+	it("the listening fragment composes into BOTH teaching agents", () => {
+		for (const kind of ["teacher", "prober"] as const) {
+			const instructions = composeInstructions(kind);
+			assert.ok(instructions.includes("## Listening practice"), `${kind} carries the listening doctrine`);
+			assert.ok(instructions.includes("Anti-spoiler"), `${kind} states the spoiler rule`);
+		}
+	});
+
 	it("the sources-v1 shared fragment composes into BOTH agents (find/ls/grep doctrine)", () => {
 		for (const kind of ["teacher", "prober"] as const) {
 			const instructions = composeInstructions(kind);

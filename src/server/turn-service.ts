@@ -19,7 +19,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import type { LhMessage } from "../core/native-messages.ts";
 import { newMessageId } from "../core/native-messages.ts";
-import { QUESTION_TOOLS } from "../core/pending.ts";
+import { DOCK_ANSWER_TOOLS } from "../core/pending.ts";
 import { planBlocksFor } from "../core/plan-blocks.ts";
 import { coverageOf } from "../core/coverage.ts";
 import type { ChatStore, GraphStore } from "../core/ports.ts";
@@ -63,7 +63,7 @@ export function persistTurn(
 			// The placeholder question result: loop device, never a record fact.
 			if (
 				(message as { role?: string }).role === "toolResult" &&
-				(QUESTION_TOOLS as readonly string[]).includes((message as ToolResultMessage).toolName) &&
+				(DOCK_ANSWER_TOOLS as readonly string[]).includes((message as ToolResultMessage).toolName) &&
 				!(message as ToolResultMessage).isError
 			) {
 				continue;

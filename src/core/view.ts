@@ -36,7 +36,7 @@ import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import type { LhMarkerMessage, LhMessage } from "./native-messages.ts";
 import { modelSolutionForConclude, PRACTICE_CONCLUDE_TOOL, problemInputForConclude } from "./native-messages.ts";
 import { activeCompactionOf, type CompactionDetails } from "./compaction.ts";
-import { QUESTION_TOOLS } from "./pending.ts";
+import { DOCK_ANSWER_TOOLS } from "./pending.ts";
 import type { SubagentArtifactData, SubagentResultMeta } from "./contracts/jobs.ts";
 import type { PlanBlockData } from "./contracts/chat.ts";
 
@@ -267,7 +267,7 @@ export function projectView(messages: readonly LhMessage[], live?: LiveTurnState
  *  but the ConcludeCard reads the call's input, and output-available with
  *  output undefined renders fine). */
 function isPlaceholderResultTool(name: string): boolean {
-	return (QUESTION_TOOLS as readonly string[]).includes(name) || name === "problem";
+	return (DOCK_ANSWER_TOOLS as readonly string[]).includes(name) || name === "problem";
 }
 
 /** A tool call block → its view part, with the live execution layer.

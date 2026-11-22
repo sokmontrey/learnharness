@@ -50,10 +50,18 @@ export const QUESTION_TOOLS = [
 	"recall",
 ] as const;
 
+/** Client-answered listening dictation (hard-gated dock, same persistence fold). */
+export const LISTENING_TOOLS = ["listening"] as const;
+
+/** Dock tools the learner must answer before the composer returns. Order in
+ *  the assistant message determines which pending UI wins (listening before quiz). */
+export const DOCK_ANSWER_TOOLS = [...LISTENING_TOOLS, ...QUESTION_TOOLS] as const;
+
 /** The tool→kind map (the dock's own fold, named once — the dismissal
  *  path and the dock must never disagree on what a tool is). The probe
  *  names fold onto their teach kinds — the dock is kind-driven. */
-export function toolQuestionKind(tool: string): "quiz" | "ask" | "explain" {
+export function toolQuestionKind(tool: string): "quiz" | "ask" | "explain" | "listening" {
+	if (tool === "listening") return "listening";
 	return tool === "quiz" || tool === "probe" ? "quiz" : tool === "explain" || tool === "recall" ? "explain" : "ask";
 }
 
@@ -125,6 +133,10 @@ export function findPendingToolCall(messages: UIMessage[]): PendingToolCall | nu
 	return findPending(messages, QUESTION_TOOLS);
 }
 
+export function findPendingDockCall(messages: UIMessage[]): PendingToolCall | null {
+	return findPending(messages, DOCK_ANSWER_TOOLS);
+}
+
 // ─── Turn activity label (2026-09-19, the “Writing a question…” fix) ──────
 
 /**
@@ -156,6 +168,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
  *  bottom line. Question tools are excluded here: their input-streaming
  *  part renders in the dock, never a live card. */
 export function toolActivityLabel(tool: string): string {
+	if (tool === "listening") return "Preparing listening…";
 	if ((QUESTION_TOOLS as readonly string[]).includes(tool)) return "Writing a question…";
 	return ACTIVITY_LABELS[tool] ?? "Working…";
 }

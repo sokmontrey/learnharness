@@ -30,7 +30,7 @@ import type { LhMessage } from "./native-messages.ts";
 import {
 	activeProblemOf,
 	concludedByDismissalPair,
-	danglingQuestionOf,
+	danglingDockCallOf,
 	newAnswerResult,
 	newNextMessage,
 	newProblemDismissedMarker,
@@ -38,7 +38,7 @@ import {
 	newUserMessage,
 	pendingProblemDismissalOf,
 } from "./native-messages.ts";
-import { QUESTION_TOOLS, toolQuestionKind } from "./pending.ts";
+import { DOCK_ANSWER_TOOLS, toolQuestionKind } from "./pending.ts";
 
 /** One client-originated input event (the POST body's `input`). */
 export type ChatInput =
@@ -137,7 +137,7 @@ export function dismissAppends(record: { messages: LhMessage[] }, input: Dismiss
 		}
 		return [newProblemDismissedMarker(input.problemCallId)];
 	}
-	const pending = danglingQuestionOf(record.messages);
+	const pending = danglingDockCallOf(record.messages);
 	if (!pending || pending.toolCallId !== input.toolCallId) {
 		throw new ChatInputError("dismiss input targets no pending question call");
 	}
@@ -202,9 +202,12 @@ export function inputAppends(
 		case "text":
 			return [...dismissalConclusion(record), newUserMessage(input.text)];
 		case "answer": {
-			const pending = danglingQuestionOf(record.messages);
+			const pending = danglingDockCallOf(record.messages);
 			if (!pending || pending.toolCallId !== input.toolCallId) {
 				throw new ChatInputError("answer input targets no pending question call");
+			}
+			if (input.answer.kind !== toolQuestionKind(pending.tool)) {
+				throw new ChatInputError("answer input's answer kind does not match the pending tool");
 			}
 			return [newAnswerResult(input.toolCallId, pending.tool, input.answer)];
 		}
@@ -243,7 +246,7 @@ function dismissalConclusion(record: { messages: LhMessage[] }): LhMessage[] {
 	return problemCallId ? concludedByDismissalPair(problemCallId) : [];
 }
 
-/** Is this tool name a question tool (dock-owned, answer-gated)? */
+/** Is this tool name a dock-answered tool (question or listening)? */
 export function isQuestionTool(name: string): boolean {
-	return (QUESTION_TOOLS as readonly string[]).includes(name);
+	return (DOCK_ANSWER_TOOLS as readonly string[]).includes(name);
 }
