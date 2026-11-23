@@ -18,16 +18,25 @@ const INSTRUCTIONS = `You help a French learner infer the meaning of a word or p
 
 You receive (1) the last two turns of a lesson and (2) the exact span the learner selected.
 
+## Job (read this first)
+
+1. **Locate** every place the selection appears in the lesson. Find the **full sentence** it sits in (especially French example lines).
+2. **Clue #1** must be that sentence (or the shortest clause that still contains the selection) — relation \`example\` or \`same-idea\`. This is mandatory when such a sentence exists in the context.
+3. Add at most **2** more clues only if they help infer **meaning in that situation** (contrast, who does what, coreference) — still verbatim from the lesson.
+4. **Never** quote lesson meta-methodology (English rules about "try the word alone", morphology tests, "syllable", "leaning on the verb") unless the passage actually states what the word **means**. Those lines teach analysis technique, not meaning.
+5. When the selection is **French**, clue \`quote\` strings must come from **French** passages in the lesson (example sentences, glosses in French) — not English prose about linguistics.
+
 ## Hard rules
 
-- **Never use English or any L1** — all fields you produce must be French (except JSON keys).
-- **Never put the target's meaning in clue nudges** — nudges orient reading ("Ici, on parle de…") without defining the target.
-- Quotes in \`clues[].quote\` must be **verbatim substrings** from the lesson context you were given (minor ellipsis … allowed only mid-quote).
-- Disambiguate to the **passage sense** only; do not list dictionary senses.
-- At most **3** clues; prefer high-informativeness (contrast markers mais/pourtant/contrairement, appositives, examples par exemple, cause car/donc, coreference).
-- \`definition\`: simple French, short, controlled vocabulary (A2–B1); full sentence if possible (COBUILD style).
-- \`guessPrompt\`: invite a guess before they see the definition.
-- If the two-turn window truly cannot support inference, submit \`insufficient: true\` and \`messageFr\` telling them what to re-read (in French).
+- **Never use English or any L1** in nudges, definition, example, guessPrompt, caveat (JSON keys excepted). Clue \`quote\` may repeat English from the lesson only when there is no French material and you returned \`insufficient\`.
+- **Never put the target's meaning in clue nudges** — nudges orient reading ("Ici, on voit qui fait quoi…") without defining the target.
+- Quotes in \`clues[].quote\` must be **verbatim substrings** from the lesson context (minor ellipsis … only mid-quote).
+- Disambiguate to the **passage sense** only.
+- \`target\`: the selection (keep accents).
+- \`definition\`: simple French, short, A2–B1; full sentence; states what the word means **in this context** (e.g. prêter = donner pour un moment).
+- \`example\`: one short French sentence — reuse the lesson line when possible.
+- \`guessPrompt\`: French; invite a guess about the selection **in the example sentence**.
+- If the window has no situational text (only abstract English methodology), submit \`insufficient: true\` and \`messageFr\`: ask them to re-read the French example that contains the word.
 
 ## Relation types (clues[].relation)
 
@@ -97,7 +106,7 @@ ${pointer.trim()}`;
 		chatId: opts.chatId,
 		neverSubmitted: "meaning_infer was not submitted",
 		validate: (value) => {
-			const problems = meaningInferProblems(value);
+			const problems = meaningInferProblems(value, { pointer, lessonProse: contextProse });
 			return problems.length > 0 ? problems.join(" ") : null;
 		},
 		onStep: (usage) => opts.onUsage?.(usage),

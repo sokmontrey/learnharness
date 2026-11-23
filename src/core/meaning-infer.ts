@@ -81,8 +81,51 @@ export function isMeaningInferInsufficient(r: MeaningInferResult): r is MeaningI
 	return "insufficient" in r && r.insufficient === true;
 }
 
+/** Token/phrase plausibly French (accents or common closed-class words). */
+export function looksFrenchSpan(text: string): boolean {
+	const t = text.trim();
+	if (!t) return false;
+	if (/[àâäéèêëïîôùûüçœæ]/i.test(t)) return true;
+	if (/\b(le|la|les|un|une|des|du|de|à|il|elle|on|ne|pas|que|qui|dont|son|sa|ses|leur)\b/i.test(t)) return true;
+	const stripped = t.replace(/[\s\d.,!?;:'"\-—…«»()]/gu, "");
+	if (stripped.length === 0) return false;
+	const latin = stripped.replace(/[^\p{Script=Latin}]/gu, "");
+	return latin.length >= stripped.length * 0.7 && /\p{M}/u.test(stripped) === false && t.length > 2;
+}
+
+function normWs(s: string): string {
+	return s.replace(/\s+/g, " ").trim();
+}
+
+/** Quote must appear in the lesson prose (ellipsis allowed mid-quote). */
+export function clueQuoteInLesson(quote: string, lessonProse: string): boolean {
+	const q = normWs(quote);
+	const lesson = normWs(lessonProse);
+	if (!q || !lesson) return false;
+	if (lesson.includes(q)) return true;
+	const parts = q.split(/\s*…\s*|\s*\.\.\.\s*/);
+	if (parts.length <= 1) return false;
+	return parts.every((p) => p.length === 0 || lesson.includes(normWs(p)));
+}
+
+/** English-only metalanguage heuristics — not situational French context. */
+export function looksEnglishMethodologyQuote(quote: string): boolean {
+	const q = quote.trim();
+	if (!q) return true;
+	if (looksFrenchSpan(q)) return false;
+	if (/[àâäéèêëïîôùûüç]/i.test(q)) return false;
+	return /^[\x20-\x7E]+$/.test(q);
+}
+
+export interface MeaningInferValidateOpts {
+	/** Learner's selection verbatim. */
+	pointer?: string;
+	/** Labeled lesson excerpt (explainContextProse). */
+	lessonProse?: string;
+}
+
 /** Semantic validation after schema decode (submit-agent validate hook). */
-export function meaningInferProblems(input: MeaningInferResult): string[] {
+export function meaningInferProblems(input: MeaningInferResult, opts: MeaningInferValidateOpts = {}): string[] {
 	if (isMeaningInferInsufficient(input)) {
 		const msg = input.messageFr.trim();
 		if (!msg) return ["messageFr is empty when insufficient."];
@@ -101,6 +144,36 @@ export function meaningInferProblems(input: MeaningInferResult): string[] {
 		if (!c.quote.trim()) problems.push(`clues[${i}].quote is empty.`);
 		if (!c.nudge.trim()) problems.push(`clues[${i}].nudge is empty.`);
 	}
+
+	const pointer = opts.pointer?.trim() ?? success.target.trim();
+	const lesson = opts.lessonProse ?? "";
+	if (lesson) {
+		for (let i = 0; i < success.clues.length; i++) {
+			const q = success.clues[i]!.quote;
+			if (!clueQuoteInLesson(q, lesson)) {
+				problems.push(`clues[${i}].quote is not verbatim in the lesson context.`);
+			}
+		}
+	}
+
+	if (looksFrenchSpan(pointer) && success.clues.length > 0) {
+		const allEnglishMethod = success.clues.every((c) => looksEnglishMethodologyQuote(c.quote));
+		if (allEnglishMethod) {
+			problems.push(
+				"French selection — clues must quote French situational text (the example sentence), not English methodology.",
+			);
+		}
+	}
+
+	if (looksFrenchSpan(pointer) && lesson && lesson.includes(pointer)) {
+		const anchored = success.clues.some((c) => normWs(c.quote).toLowerCase().includes(pointer.toLowerCase()));
+		if (!anchored) {
+			problems.push(
+				"At least one clue must quote text that contains the selection (usually the full example sentence).",
+			);
+		}
+	}
+
 	return problems;
 }
 
